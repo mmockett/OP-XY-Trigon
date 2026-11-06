@@ -5,7 +5,11 @@
 // engine.cpp, linked with crt0.s and sim.ld, and run in CI by bfin-elf-run.
 // The simulator counts an instruction a cycle, with its own fixed delays for
 // branches, calls, returns and 32-bit multiplies, and no memory or register
-// stalls: a count, not a measurement. Prints one line per run:
+// stalls: a count, not a measurement. To keep the simulator's time down it
+// runs each run's first 200 blocks and takes the profiler's 1500 as those
+// plus thirteen more of the strikes' 100-block cycle (blocks 100 to 199):
+// the voices are struck every 100 blocks, so later cycles repeat it. Prints
+// one line per run:
 //   run <index> <label> <voices> <total cycles> <worst block> <mean per block>
 // in the profiler's order, choosing the heaviest single run for the
 // retriggers and full polyphony as the profiler does. Not part of any kit.
@@ -28,19 +32,29 @@ void put(opxy::u32 v) {
     do { b[--n] = static_cast<char>('0' + v % 10u); v /= 10u; } while (v);
     put(b + n);
 }
+const opxy::u32 kCounted = 200, kCycle = 100;
 struct Counter {
-    opxy::u32 total_low, total_high, worst;
+    opxy::u32 total_low, total_high, worst, n, cycle;
     opxy::u32 clock() {
         opxy::u32 c;
         __asm__ volatile("%0 = CYCLES;" : "=d"(c));
         return c;
     }
     void block(opxy::u32, const opxy::i32*) {}
-    void spent(opxy::u32 cycles) {
+    void add(opxy::u32 cycles) {
         const opxy::u32 before = total_low;
         total_low += cycles;
         total_high += total_low < before;
+    }
+    void spent(opxy::u32 cycles) {
+        add(cycles);
+        if (n >= kCounted - kCycle) cycle += cycles;
+        ++n;
         if (cycles > worst) worst = cycles;
+    }
+    // the rest of the profiler's blocks: the last cycle again, as often as it fits
+    void finish() {
+        for (opxy::u32 k = kCounted; k < bench::kBlocks; k += kCycle) add(cycle);
     }
 };
 }  // namespace
@@ -48,9 +62,10 @@ struct Counter {
 int main() {
     opxy::u32 heavy_model = 0, heavy_level = 0, most = 0;
     for (opxy::u32 index = 0; index < bench::kRuns; ++index) {
-        Counter c = {0, 0, 0};
+        Counter c = {0, 0, 0, 0, 0};
         const bool one = index >= 1 && index <= bench::kSingle;
-        bench::run(index, heavy_model, heavy_level, c);
+        bench::run(index, heavy_model, heavy_level, c, kCounted);
+        c.finish();
         const opxy::u32 mean = c.total_high ? 0xffffffffu : c.total_low / bench::kBlocks;
         if (one && (index == 1 || mean > most)) { most = mean; heavy_model = (index - 1) / 3; heavy_level = (index - 1) % 3; }
         put("run ");
