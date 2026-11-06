@@ -674,19 +674,30 @@ FLICKER_APART void draw_stipple(Voice& v, i32* x) {
     Svf a = v.sv[0], b = v.sv[1], d = v.sv[2];
     u32 seed = v.seed;
     i32 e = e0;
+    // the dots first (a new one by a select, not a branch), then their bands
+    i32 dots[frames];
     for (unsigned i = 0; i < frames; ++i) {
         const u32 r = rng(seed);
-        if (static_cast<i32>(r >> 1) < c) dot = static_cast<i32>(r << 1) >> 1;
-        const i32 y = a.band(dot >> 2, f, q);
-        i32 out = multiply(y, one - jingle);
-        if (jingle) {
-            // the jingles ring long: fed a quarter as hard, heard four times as loud
-            const i32 jj = opxy::q31::add(b.band(dot >> 7, jf, jq), d.band(dot >> 7, kf, kq));
-            out = opxy::q31::add(out, clamp(multiply(jj, jingle), -(1 << 29), (1 << 29) - 1) * 4);
-        }
-        x[i] = clamp(multiply(out, e), -(1 << 29), (1 << 29) - 1) * 4;
+        dot = static_cast<i32>(r >> 1) < c ? static_cast<i32>(r << 1) >> 1 : dot;
+        dots[i] = dot;
         dot = multiply(dot, dk);
-        e += de;
+    }
+    if (jingle) {
+        for (unsigned i = 0; i < frames; ++i) {
+            const i32 y = a.band(dots[i] >> 2, f, q);
+            i32 out = multiply(y, one - jingle);
+            // the jingles ring long: fed a quarter as hard, heard four times as loud
+            const i32 jj = opxy::q31::add(b.band(dots[i] >> 7, jf, jq), d.band(dots[i] >> 7, kf, kq));
+            out = opxy::q31::add(out, clamp(multiply(jj, jingle), -(1 << 29), (1 << 29) - 1) * 4);
+            x[i] = clamp(multiply(out, e), -(1 << 29), (1 << 29) - 1) * 4;
+            e += de;
+        }
+    } else {
+        for (unsigned i = 0; i < frames; ++i) {
+            const i32 y = a.band(dots[i] >> 2, f, q);
+            x[i] = clamp(multiply(multiply(y, one), e), -(1 << 29), (1 << 29) - 1) * 4;
+            e += de;
+        }
     }
     v.k[4] = dot;
     v.sv[0] = a; v.sv[1] = b; v.sv[2] = d;
