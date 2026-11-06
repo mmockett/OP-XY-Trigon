@@ -34,15 +34,17 @@ struct Env {
     i32 amp;        // the value at the end of the last block, Q31
     i32 hold;       // blocks the level holds before it decays (a shake's swell)
 };
+// Envelopes, and the parts they drive, stop 72 dB down.
+const i32 env_floor = -12 * octave;
 inline i32 env_value(const Env& e) {
     const i32 a = e.atk >= 65536 ? one : multiply(q31(e.atk), q31(e.atk) >> 1) + (q31(e.atk) >> 1);   // (t^2 + t) / 2
-    return e.lvl <= -24 * octave ? 0 : multiply(a, frac2(e.lvl));
+    return e.lvl <= env_floor ? 0 : multiply(a, frac2(e.lvl));
 }
 // Advances the envelope a block at the speed r16 (Q16, 1 = 45 rpm).
 inline void env_step(Env& e, i32 r16) {
     if (e.atk < 65536) e.atk = clamp(e.atk + mul16(e.atk_step, r16), 0, 65536);
     else if (e.hold > 0) --e.hold;
-    else if (e.lvl > -24 * octave) e.lvl += mul16(e.slope, r16);
+    else if (e.lvl > env_floor) e.lvl += mul16(e.slope, r16);
     e.amp = env_value(e);
 }
 inline void env_set(Env& e, i32 level, i32 latk, i32 ldecay) {
@@ -273,8 +275,8 @@ __attribute__((cold)) inline void set_mode(Voice& v, u32 k, i32 lhz, i32 ltau, i
     const i32 lf = log2u(static_cast<u32>(m.f > 0 ? m.f : 1)) - 31 * octave;
     const i32 lg = log2u(static_cast<u32>(amp > 0 ? amp : 1)) - 31 * octave + L(1.0 / 0.637) - lf - lsamples + log2u(U) - log2u(static_cast<u32>(v.ex_amp > 0 ? v.ex_amp : 1));
     m.gin = amp > 0 ? static_cast<i32>(pow2(clamp(lg + 24 * octave, 0, 30 * octave))) : 0;   // at most 64
-    // it rings until 80 dB down: 9.2 time constants, in real blocks
-    m.left = amp > 0 ? static_cast<i32>(samples(ltau - v.lbase + L(12.0)) >> 6) + 4 : 0;
+    // it rings until 72 dB down: 8.3 time constants, in real blocks
+    m.left = amp > 0 ? static_cast<i32>(samples(ltau - v.lbase + L(8.3)) >> 6) + 4 : 0;
     if (k + 1 > v.nmodes) v.nmodes = k + 1;
 }
 // The modes for this block: struck by e for its first n samples (the
@@ -441,7 +443,7 @@ inline void layer_block(Voice& v, Layer& n, i32* x, bool retune) {
     if (retune) layer_tune(n, v.lrate, n.next ? n.shift[n.next - 1] : 0);
     env_step(n.env, v.r16);
     layer_run(v, n, x, 0, frames, multiply(multiply(n.env.amp, n.amp), gate));
-    if (n.env.atk >= 65536 && n.env.lvl <= -24 * octave && n.next >= n.bursts) n.on = 0;
+    if (n.env.atk >= 65536 && n.env.lvl <= env_floor && n.next >= n.bursts) n.on = 0;
 }
 
 // ------------------------------------------------------------ metal
@@ -566,7 +568,7 @@ inline void metal_block(Voice& v, i32* x, bool retune) {
     }
     env_step(m.env, v.r16);
     metal_run(m, w, x, 0, frames, multiply(m.env.amp, m.amp));
-    if (m.env.atk >= 65536 && m.env.lvl <= -24 * octave && m.next >= m.bursts) m.on = 0;
+    if (m.env.atk >= 65536 && m.env.lvl <= env_floor && m.next >= m.bursts) m.on = 0;
 }
 
 // ------------------------------------------------------------ the room

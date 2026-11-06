@@ -52,10 +52,10 @@ inline bool pad_control_text(u32 field, i32 value, char* text) {
 }
 
 // A voice has ended once the needle is lifted and its thump is over, or
-// sooner once its output has stayed under -96 dB for 60 ms with nothing
-// still to come and no worn surface still playing.
-const i32 quiet_under = 1 << 15;
-const u32 quiet_blocks = 42;
+// sooner once its output has stayed 72 dB under the ceiling for 23 ms with
+// nothing still to come and no worn surface still playing.
+const i32 quiet_under = 1 << 18;
+const u32 quiet_blocks = 16;
 inline bool finished(const Voice& voice, const Shared&) { return voice.done != 0; }
 
 // A soft knee over the last quarter under the ceiling: what the level trim
@@ -310,6 +310,16 @@ inline bool record_block(Voice& v, i32* x, i32* ry) {
         v.tail = multiply(v.tail, Q31(0.93));
     }
     if (!v.send) return false;
+    // once the hit has played out and the room has died away 72 dB, the room stops
+    if (v.t >= v.pre && !v.ex_left && v.click < (one >> 12) && !v.layer[0].on && !v.layer[1].on && !v.metal.on &&
+        imax(imax(absolute(v.rlp[0]), absolute(v.rlp[1])), imax(imax(absolute(v.rlp[2]), absolute(v.rlp[3])), absolute(v.rprev))) < (U >> 12)) {
+        bool ringing = false;
+        for (u32 k = 0; k < v.nmodes; ++k) ringing |= v.mode[k].left > 0;
+        if (!ringing) {
+            v.send = 0;
+            return false;
+        }
+    }
     room_run(v, x, ry);
     return true;
 }
