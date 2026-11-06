@@ -204,13 +204,13 @@ inline void run_modes(Voice& v, const i32* x, i32* out) {
     }
 }
 // The pedal's strings, driven by the voice's sound in, adding theirs to out.
-inline void run_pedal(Voice& v, const i32* in, i32* out) {
+// The pedal's strings, driven by what the voice sounds so far, into it.
+inline void run_pedal(Voice& v, i32* out) {
     if (!v.npedal) return;
-    i32 x[frames], y[frames];
+    i32 x[frames];
     const i32 g = v.pedal_g;
-    for (unsigned i = 0; i < frames; ++i) { x[i] = mul(in[i], g); y[i] = 0; }
-    for (u32 k = 0; k < v.npedal; ++k) run_low(v.mode[max_modes + k], x, y);
-    for (unsigned i = 0; i < frames; ++i) out[i] = add(out[i], y[i]);
+    for (unsigned i = 0; i < frames; ++i) x[i] = mul(out[i], g);
+    for (u32 k = 0; k < v.npedal; ++k) run_low(v.mode[max_modes + k], x, out);
 }
 // The damper lands: every string mode takes its damped loss.
 static __attribute__((noinline)) void land_damper(Voice& v, u32 count) {

@@ -62,25 +62,23 @@ inline void string_rest(Voice& v) {
     v.spec_next = last < v.spec.partials ? last + 1 : 0;
 }
 // The pedal: the sympathetic strings an octave, a twelfth and two octaves
-// over lf0, and one neighbouring key, ringing for 1.5..4 s; and every damper
-// lifted, so the struck string's own damper barely lands.
+// over lf0, ringing for 1.5..4 s; and every damper lifted, so the struck
+// string's own damper barely lands.
 static __attribute__((noinline)) void pedal_strings(Voice& v, i32 lf0, i32 pedal) {
     v.npedal = 0;
     v.pedal_g = 0;
     if (pedal <= 0) return;
-    // A bell's or a gong's partials meet the strings off their pitch and
-    // barely move them: the prepared note's own unison answers there, in place
-    // of the neighbouring key. A brush's noise meets them everywhere, faintly.
-    static const i32 ratio[2][4] = {{L(2.0), L(3.0), L(4.0), L(2.0 * 1.0594630943592953)}, {L(2.0), L(3.0), L(4.0), 0}};
+    // A brush's noise meets them everywhere, faintly.
+    static const i32 ratio[3] = {L(2.0), L(3.0), L(4.0)};
     // they ring a long while at their own pitch, so they answer loudly: coupled
     // gently, a halo a few dB under the note rather than a sound of its own
-    static const i32 coupling[12] = {Q31(0.0008), Q31(0.0008), Q31(0.0008), Q31(0.0008), Q31(0.0008), Q31(0.0002),
-                                     Q31(0.0035), Q31(0.0008), Q31(0.0035), Q31(0.0002), Q31(0.0008), Q31(0.0008)};
+    // (three strings, each coupled a little more than when there were four)
+    static const i32 coupling[12] = {Q31(0.00092), Q31(0.00092), Q31(0.00092), Q31(0.00092), Q31(0.00092), Q31(0.00023),
+                                     Q31(0.004), Q31(0.00092), Q31(0.004), Q31(0.00023), Q31(0.00092), Q31(0.00092)};
     const u32 m = v.model;
-    const i32* r = ratio[m == M::BELL || m == M::BOLT];
     const i32 sigma = rate_of(lerp16(L(0.8), L(1.8), pedal));
-    for (u32 k = 0; k < 4; ++k) {
-        i32 lf = lf0 + r[k];
+    for (u32 k = 0; k < 3; ++k) {
+        i32 lf = lf0 + ratio[k];
         while (lf > L(5000.0)) lf -= octave;
         add_pedal(v, lf, sigma);
     }
@@ -828,7 +826,7 @@ inline void block_model(Voice& v, i32* out) {
     // the pedal's strings answer what the voice sounds (set up in the fifth
     // block, to spread the note's start)
     if (v.t == 4 * frames && v.k[7] > 0) pedal_strings(v, v.k[6], v.k[7]);
-    run_pedal(v, out, out);
+    run_pedal(v, out);
     if (m == M::RATTLE) stage_top2(v, out);
     else if (m != M::BRUSH && m != M::CHAIN && m != M::LID) stage_top(v, out);
     // the damper lands
