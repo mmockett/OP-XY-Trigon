@@ -50,13 +50,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang g++
       - name: Bit for bit
         working-directory: trigon
-        env:
-          BEFORE: ${{ github.event.before }}
         run: |
           git fetch --tags --force origin
-          from="$BASE"
-          if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null && git merge-base --is-ancestor "$BASE" "$BEFORE"; then from=$BEFORE; fi
-          sh tools/perf/identity.sh ${{ matrix.kit }} ../open-xy "$BASE" "$from"
+          sh tools/perf/identity.sh ${{ matrix.kit }} ../open-xy "$BASE"
 
   compare:
     runs-on: ubuntu-latest
