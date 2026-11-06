@@ -605,10 +605,11 @@ inline void caption(char* out, const Caption& c, i32 t, i32 tune) {   // t: Q10 
     case sqlength: seconds(out, pow2v(lmixc(c.la, c.lb, (t * t) >> 10) + tau40)); return;
     case time: seconds(out, pow2v(lmixc(c.la, c.lb, t))); return;
     case ms10: {
-        // a short time in tenths of a millisecond: "0.4ms" .. "2.5ms"
+        // a short time in tenths of a millisecond, "0.4" .. "2.5", its unit in the
+        // title ("size ms"): "2.5ms" is 55.5 px at the header's 20 px, past its column
         const u32 s = pow2v(lmixc(c.la, c.lb, t) + 14 * 65536);   // s * 2^14, Q16
         const u32 dms = (s * 10u / 65536u * 1000u + 8192u) >> 14;  // tenths of a ms
-        tenths(out, static_cast<i32>(dms), "ms");
+        tenths(out, static_cast<i32>(dms), "");
         return;
     }
     case st: number(out, (t * c.la + 512) >> 10, "st"); return;
@@ -666,7 +667,7 @@ const char* const labels[models][8] = {
     {"PITCH", "DECAY", "SCRATCH", "SNAP", "GRAIN", "INK", "FLUTTER", "DUST"},
     {"PITCH", "DECAY", "BEND", "SHAPE", "SLAP", "INK", "FLUTTER", "DUST"},
     {"PITCH", "DECAY", "STROKES", "SPREAD", "SCATTER", "INK", "FLUTTER", "DUST"},
-    {"PITCH", "DECAY", "SIZE", "ECHO", "GAP", "INK", "FLUTTER", "DUST"},
+    {"PITCH", "DECAY", "SIZE MS", "ECHO", "GAP", "INK", "FLUTTER", "DUST"},
     {"PITCH", "DECAY", "RATIO", "WIDTH", "BEND", "INK", "FLUTTER", "DUST"},
     {"PITCH", "DECAY", "METAL", "EDGE", "SPREAD", "INK", "FLUTTER", "DUST"},
     {"PITCH", "DECAY", "RINGS", "BELL", "SWELL", "INK", "FLUTTER", "DUST"},

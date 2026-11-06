@@ -106,7 +106,7 @@ Captions are the header's, at 0, 25, 50, 75 and 100 of each control's travel, wi
 | SCATTER | STROKES | `0` `25` `50` `75` `100` | centroid 2.2k, 2.2k, 2.2k Hz; 40 dB in 0.49, 0.49, 0.49 s | From one tight clap to a loose crowd: strokes later and uneven, each in its own tone, the smear many hands. |
 | PITCH | DOT | `300` `594` `1.2k` `2.3k` `4.5k` | centroid 301, 998, 2.5k Hz; 40 dB in 0.21, 0.17, 0.16 s | The ring the dot strikes. |
 | DECAY | DOT | `46ms` `0.12s` `0.30s` `0.73s` `1.8s` | centroid 1.5k, 881, 977 Hz; 40 dB in 0.12, 0.23, 1.34 s | How long it rings. |
-| SIZE | DOT | `0.1ms` `0.2ms` `0.5ms` `1.1ms` `2.5ms` | centroid 1.6k, 1.0k, 657 Hz; 40 dB in 0.16, 0.16, 0.16 s | A small dot rings bright; a large one knocks the wood under it. |
+| SIZE | DOT | `0.1` `0.2` `0.5` `1.1` `2.5` (title: size ms) | centroid 1.6k, 1.0k, 657 Hz; 40 dB in 0.16, 0.16, 0.16 s | A small dot rings bright; a large one knocks the wood under it. |
 | ECHO | DOT | `0` `2` `3` `4` `6` | centroid 1.6k, 1.4k, 1.3k Hz; 40 dB in 0.15, 0.22, 0.30 s | Dots after the first, each fainter. |
 | GAP | DOT | `12ms` `26ms` `55ms` `0.12s` `0.25s` | centroid 1.7k, 1.4k, 1.5k Hz; 40 dB in 0.17, 0.21, 0.61 s | Time between the echoes. |
 | PITCH | CARD | `F#3` `E4` `D#5` `D6` `C#7` | centroid 350, 1.2k, 3.8k Hz; 40 dB in 0.48, 0.48, 0.48 s | The lower card's note. |
