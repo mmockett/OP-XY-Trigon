@@ -63,8 +63,13 @@ int main() {
     opxy::u32 heavy_model = 0, heavy_level = 0, most = 0;
 #ifdef SIM_QUICK
     // a check that the simulator runs this at all: one voice, ten blocks
-    put("quick\n");
+    put("quick: in main\n");
     Counter q = {0, 0, 0, 0, 0};
+    put("quick: cycles now ");
+    put(q.clock());
+    put("\n");
+    bench::run(1, 0, 0, q, 1);
+    put("quick: one block\n");
     bench::run(1, 0, 0, q, 10);
     put("ten blocks of one voice: ");
     put(q.total_low);

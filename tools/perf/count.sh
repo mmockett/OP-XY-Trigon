@@ -34,7 +34,7 @@ build() {
         if [ ! -f "$WORK/quick.done" ]; then
             SIM_DEFS=-DSIM_QUICK sh "$ROOT/tools/perf/sim.sh" "$WORK/src-$t/$KIT" "$SDK" "$WORK/quick.elf"
             start=$(date +%s)
-            perl -e 'alarm 300; exec @ARGV' "$RUN" "$WORK/quick.elf" >&2 && echo "the simulator ran the quick check in $(( $(date +%s) - start )) s" >&2 ||
+            script -q /dev/null perl -e 'alarm 300; exec @ARGV' "$RUN" "$WORK/quick.elf" >&2 && echo "the simulator ran the quick check in $(( $(date +%s) - start )) s" >&2 ||
                 { echo "the simulator failed the quick check ($?)" >&2; sh "$ROOT/tools/perf/probe.sh" "$SDK" "$RUN" "$WORK/quick.elf" >&2; exit 1; }
             touch "$WORK/quick.done"
         fi

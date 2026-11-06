@@ -26,6 +26,8 @@ start:
     [P0++] = R0;
     JUMP .Lclear;
 .Lcleared:
+    OUTC 0x73;                /* "s\n": started */
+    OUTC 0x0a;
     SP += -12;
     CALL _main;
     SP += 12;
