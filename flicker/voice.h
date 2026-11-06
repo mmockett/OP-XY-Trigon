@@ -79,13 +79,16 @@ struct Voice {
 // parabola that meets the edge flat (the slit, after it, rounds the rest);
 // the heavier the ink, the harder its edge: the knee rises from 0.6 of the
 // edge toward it. x in track edges.
+// (no branches: the bend is worked out over the knee and chosen by selects)
 inline i32 ink_cut(i32 x, const Cut& c) {
     const i32 y = multiply(x, c.ink);   // x times ink / 8: the edge at 2^25
-    i32 a = y < 0 ? (y == -one - 1 ? one : -y) : y;
-    if (a > c.knee) {
-        const i32 d = a - c.knee;
-        a = d >= c.span ? E / 8 : c.knee + d - multiply(multiply(d * 32, d * 32), c.curve);
-    }
-    return y < 0 ? -a * 8 : a * 8;
+    const i32 a = absolute(y);
+    const i32 d = a - c.knee;
+    const i32 dd = clamp(d, 0, c.span);
+    const i32 bent = c.knee + dd - multiply(multiply(dd * 32, dd * 32), c.curve);
+    i32 r = d >= c.span ? E / 8 : bent;
+    r = d > 0 ? r : a;
+    const i32 s = y >> 31;
+    return ((r * 8) ^ s) - s;
 }
 }

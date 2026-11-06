@@ -33,8 +33,21 @@ constexpr i32 QE(double x) { return ct::round(x * 268435456.0); }   // in track 
 const i32 lsr = L(44100.0);   // log2 of the sample rate
 
 // ------------------------------------------------------------ arithmetic
-inline i32 clamp(i32 v, i32 lo, i32 hi) { return v < lo ? lo : v > hi ? hi : v; }
-inline i32 absolute(i32 v) { return v < 0 ? (v == -one - 1 ? one : -v) : v; }
+inline i32 imin(i32 a, i32 b) { return a < b ? a : b; }
+inline i32 imax(i32 a, i32 b) { return a > b ? a : b; }
+// (lo <= hi; as MIN and MAX, never a branch)
+inline i32 clamp(i32 v, i32 lo, i32 hi) { return imax(imin(v, hi), lo); }
+// |v|, the most negative value held at one: the Blackfin's ABS, which
+// saturates so, and the same on the host.
+inline i32 absolute(i32 v) {
+#if defined(__bfin__)
+    i32 a;
+    __asm__("%0 = ABS %1;" : "=d"(a) : "d"(v) : "ASTAT");
+    return a;
+#else
+    return v < 0 ? (v == -one - 1 ? one : -v) : v;
+#endif
+}
 // a + (b - a) t for a Q16 unit t, |a|, |b| < 2^30.
 inline i32 mix(i32 a, i32 b, i32 t) { return a + multiply(b - a, clamp(t, 0, 65535) * 32768); }
 // a b / 65536, for |a| < 2^24 and |b| < 2^23.
@@ -127,8 +140,12 @@ inline i32 onepole_k(i32 lhz) { return one - expneg(lhz + L(6.283185307179586) -
 
 // ------------------------------------------------------------ noise
 // xorshift: shifts and exclusive-ors only. The state is never zero.
+// A seed of 0 starts as this (nonzero_seed, where the seeds are set), so
+// the generator never meets 0 and needs no test.
+const u32 seed_zero = 0x9e3779b9u;
+inline u32 nonzero_seed(u32 s) { return s ? s : seed_zero; }
 inline u32 rng(u32& s) {
-    u32 x = s ? s : 0x9e3779b9u;
+    u32 x = s;
     x ^= x << 13;
     x ^= x >> 17;
     x ^= x << 5;
