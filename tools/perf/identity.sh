@@ -9,7 +9,8 @@
 # preset, the kit's own sweep and control and pad sweeps). When every commit
 # in <base ref>..HEAD is so marked, HEAD must also render as <base ref> does.
 # Commits that leave the kit's folder alone render as their parent by
-# construction and are not rendered. Fails on any difference, naming the
+# construction and are not rendered. HEAD must render alike with both
+# compilers. Fails on any difference, naming the
 # run and its first differing block.
 set -e
 KIT=$1
@@ -70,4 +71,7 @@ if [ $all = 1 ]; then
 else
     echo "$KIT: $BASE..HEAD holds sound changes; only commits marked Sound: identical are held to their parents"
 fi
+# and the harness itself: g++ and clang++ render HEAD alike
+a=$(render HEAD HEAD gcc); b=$(render HEAD HEAD clang)
+python3 -I "$ROOT/tools/perf/identity.py" "$KIT HEAD, g++ against clang++" "$a.idx" "$a.bin" "$b.idx" "$b.bin" || status=1
 exit $status
