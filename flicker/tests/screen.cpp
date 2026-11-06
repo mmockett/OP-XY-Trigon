@@ -120,13 +120,14 @@ unsigned changed() {
     before = frame;
     return n;
 }
-// Every visible text: values at their own scale fit 53 px, titles 56 px.
+// Every visible text: values fit 53 px at the header's full 20 px (the OP-XY
+// draws header values at full size, whatever their scale), titles 56 px.
 std::set<std::string> seen;
 void measure_texts(const char* when) {
     for (unsigned i = 0; i < 16; ++i) {
         const Text& t = frame.texts[i];
         const bool value = (i >= 4 && i < 8) || i >= 12;
-        const double px = value ? 20.0 * t.scale / unit : 10.0 * t.scale / unit;
+        const double px = value ? 20.0 : 10.0 * t.scale / unit;
         const double w = width(t.chars, px);
         const double most = value ? 53.8 : 56.0;
         if (w < 0 || w > most) {
@@ -240,7 +241,7 @@ int main() {
         input.choices[1] = 1;
         flicker::display_reset(state);
         flicker::display(state, input, frame);
-        const char* want[4] = {"sweep", "1", "-40", "-6dB"};
+        const char* want[4] = {"swp", "1", "-40", "-6dB"};
         const char* title[4] = {"machine", "choke", "pan", "level"};
         for (int i = 0; i < 4; ++i) {
             if (std::strcmp(frame.texts[4 + i].chars, want[i])) { std::printf("FAIL shift row 1 shows '%s' for '%s'\n", frame.texts[4 + i].chars, want[i]); ++failures; }
@@ -266,13 +267,20 @@ int main() {
             if (std::strcmp(frame.texts[i].chars, grey[i])) { std::printf("FAIL shift row 2 titled '%s' for '%s'\n", frame.texts[i].chars, grey[i]); ++failures; }
             if (std::strcmp(frame.texts[12 + i].chars, want[i])) { std::printf("FAIL shift row 1 grey shows '%s' for '%s'\n", frame.texts[12 + i].chars, want[i]); ++failures; }
         }
-        // a long model name is drawn smaller, never past its column
+        // every model's name fits its column at full size
+        for (unsigned mm = 0; mm < 12; ++mm) {
+            set(mm, c, 0);
+            input.shift = 1;
+            flicker::display_reset(state);
+            flicker::display(state, input, frame);
+            if (std::strcmp(frame.texts[4].chars, flicker::view::names[mm])) { std::printf("FAIL model %u's name reads '%s'\n", mm, frame.texts[4].chars); ++failures; }
+            measure_texts("a model's name");
+        }
         set(7, c, 0);
         input.shift = 1;
         flicker::display_reset(state);
         flicker::display(state, input, frame);
-        if (std::strcmp(frame.texts[4].chars, "ornament")) { std::printf("FAIL ornament's name reads '%s'\n", frame.texts[4].chars); ++failures; }
-        measure_texts("ornament's name");
+        if (std::strcmp(frame.texts[4].chars, "orn")) { std::printf("FAIL ornament's name reads '%s'\n", frame.texts[4].chars); ++failures; }
     }
 
     // dead steps: every control walked in steps of 8 moves the drawing (its

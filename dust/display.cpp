@@ -177,7 +177,7 @@ inline void caption(char* out, u32 slot, u32 m, i32 r) {
     default: header_amount(out, header_capacity, r >= 127 ? 0x7fffffff : r << 24);
     }
 }
-const char* const names[rec::MODELS] = {"kick", "snare", "rim", "hat", "open", "ride", "crash", "tom", "conga", "bongo", "tamb", "bell", "clap", "shake", "bass"};
+const char* const names[rec::MODELS] = {"kick", "snare", "rim", "hat", "open", "ride", "crash", "tom", "cnga", "bngo", "tamb", "bell", "clap", "shake", "bass"};
 // Univers Next Pro Light's advance widths (thousandths of an em) for printable
 // ASCII: a value a little wider than its column is drawn a little smaller.
 static const u16 advance[95] = {

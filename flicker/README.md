@@ -35,7 +35,9 @@ high boop and a single snap).
   to come back. Both rows are drawn in the header, the one the encoders turn
   bright. The second row ends INK, FLUTTER and DUST on every model.
 - **Choose a key's model:** select the key, hold **Shift** and turn
-  **encoder 1** (MACHINE). Any key can hold any of the twelve.
+  **encoder 1** (MACHINE). Any key can hold any of the twelve; the longer
+  names show short there: swp (SWEEP), scrch (SCRATCH), strks (STROKES), orn
+  (ORNAMENT) and stipl (STIPPLE).
 - **Its mixer channel, on Shift's first row:** **encoder 2** puts the key in
   choke group 1, 2 or 3, or none (CHOKE: the hats start in group 1);
   **encoder 3** pans it (PAN); **encoder 4** sets its level (LEVEL, 0 dB

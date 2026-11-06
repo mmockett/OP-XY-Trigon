@@ -40,7 +40,9 @@ octave apart and the ride's bell.
   WARP, DRAG. Both rows are drawn in the header, the one the encoders turn
   bright.
 - **Choose a key's model:** select the key, hold **Shift** and turn
-  **encoder 1** (MACHINE). Any key can hold any of the fifteen.
+  **encoder 1** (MACHINE). Any key can hold any of the fifteen; a few names
+  show short there: cnga (CONGA), bngo (BONGO), bell (COWBELL), shake
+  (SHAKER).
 - **Its mixer channel, on Shift's first row:** **encoder 2** puts the key in
   choke group 1, 2 or 3, or none (the hats start in group 1); **encoder 3**
   pans it; **encoder 4** sets its level (0 dB down to -30 dB).

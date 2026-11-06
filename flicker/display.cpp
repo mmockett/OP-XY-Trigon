@@ -658,7 +658,9 @@ const Caption captions[models][8] = {
 };
 #undef R2
 // as the Shift row shows them: lower case
-const char* const names[models] = {"sweep", "scratch", "ring", "strokes", "dot", "card", "hatch", "ornament", "stipple", "boop", "wave", "claw"};
+// The Shift row's MACHINE names, each at most 53 px at the header's 20 px in
+// Univers Next Pro Light (the OP-XY draws header values at full size).
+const char* const names[models] = {"swp", "scrch", "ring", "strks", "dot", "card", "hatch", "orn", "stipl", "boop", "wave", "claw"};
 const char* const labels[models][8] = {
     {"PITCH", "DECAY", "BEND", "SHAPE", "CLICK", "INK", "FLUTTER", "DUST"},
     {"PITCH", "DECAY", "SCRATCH", "SNAP", "GRAIN", "INK", "FLUTTER", "DUST"},
