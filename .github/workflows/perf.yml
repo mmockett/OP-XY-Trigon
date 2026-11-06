@@ -8,9 +8,10 @@ name: Kit CPU and sound
 # - compare: the base's and the head's hits as WAV files, with a report of
 #   each model's loudness, peak, decay, brightness and band energies. Reports
 #   only.
-# - blackfin-count: each kit compiled with the SDK's pinned Blackfin tools,
-#   its loops tabled and the profiler's workload counted in the GNU Blackfin
-#   simulator, base against head.
+# - blackfin-count: each kit compiled with the SDK's pinned Blackfin tools
+#   and its loops tabled, base against head. (tools/perf/sim.cpp would count
+#   the profiler's workload in GDB's Blackfin simulator, but that simulator
+#   hangs on this toolchain's code; tools/perf/probe.sh shows where.)
 # All against open-xy 810db9d8, the SDK trigon-capture-001 was built with.
 on:
   push:
@@ -145,26 +146,11 @@ jobs:
       - name: Pinned Blackfin tools
         working-directory: open-xy
         run: python sdk.py toolchain fetch
-      - name: Restore the Blackfin simulator
-        id: sim
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ runner.temp }}/bfin-sim
-          key: bfin-sim-gdb-15.2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('trigon/tools/perf/sim-build.sh', 'trigon/tools/perf/bfplus.py') }}
-      - name: The Blackfin simulator
-        if: steps.sim.outputs.cache-hit != 'true'
-        run: sh trigon/tools/perf/sim-build.sh "$RUNNER_TEMP/bfin-sim"
-      - name: Keep the Blackfin simulator
-        if: steps.sim.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ runner.temp }}/bfin-sim
-          key: ${{ steps.sim.outputs.cache-primary-key }}
       - name: Loops and counts, base against head
         working-directory: trigon
         run: |
           git fetch --tags --force origin
-          sh tools/perf/count.sh ${{ matrix.kit }} ../open-xy "$BASE" "$RUNNER_TEMP/bfin-sim/bin/bfin-elf-run"
+          sh tools/perf/count.sh ${{ matrix.kit }} ../open-xy "$BASE"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
