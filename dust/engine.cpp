@@ -262,8 +262,9 @@ __attribute__((cold)) inline void begin(Voice& v, Shared& shared, opxy::Paramete
 }
 
 // The record's content for this block: the hit (once the needle reaches
-// it) and the room, into x.
-inline void record_block(Voice& v, i32* x) {
+// it) into x, and the room's outputs from it into ry (room_run); whether the
+// room ran.
+inline bool record_block(Voice& v, i32* x, i32* ry) {
     for (unsigned i = 0; i < frames; ++i) x[i] = 0;
     // the platter's rate: its speed, the warp's wow, the brush's drag
     bool retune = false;
@@ -307,17 +308,18 @@ inline void record_block(Voice& v, i32* x) {
         v.tail_l = l;
         v.tail = multiply(v.tail, Q31(0.93));
     }
-    room_block(v, x);
+    if (!v.send) return false;
+    room_run(v, x, ry);
+    return true;
 }
 
-// The record's chain and the player: the valve compressor and tape, the
-// cut's bandwidth, then the stylus, the wear, the tone control and the drag
-// brush. x in, y out (before the level and the needle).
-inline void chain_block(Voice& v, const i32* x, i32* y) {
+// The record's chain: the valve compressor and tape, then the cut's
+// bandwidth. Its settings for a block whose input peaks at peak: the
+// compressor's gain ramp and the cut's coefficients.
+struct Chain { i32 g, dg, kl, kh, target; bool valve; };
+inline Chain chain_gains(Voice& v, i32 peak) {
     // the compressor: a peak detector a block that lets a hit's first 10 ms
     // through and recovers in 90 ms, about 3:1 over its threshold
-    i32 peak = 0;
-    for (unsigned i = 0; i < frames; ++i) { const i32 a = absolute(x[i]); if (a > peak) peak = a; }
     v.comp = peak > v.comp ? v.comp + multiply(peak - v.comp, Q31(0.12)) : multiply(v.comp, v.comp_back);
     i32 target = v.comp > v.comp_thr ? frac2(-mul16(log2u(static_cast<u32>(v.comp)) - log2u(static_cast<u32>(v.comp_thr)), Q16(2.0 / 3.0))) : one;
     // WARP: the arm rides the warp; at its crests the stylus lightens, the
@@ -332,34 +334,78 @@ inline void chain_block(Voice& v, const i32* x, i32* y) {
     if (v.heavy) kl = imin(kl, v.w_kd);
     if (v.wear) kl = imin(kl, v.k_dull);
     if (v.metal.on) kl = imin(kl, v.metal.kl);
-    i32 g = v.comp_g;
-    const i32 dg = (target - g) >> 6, kh = v.cut_kh;
-    i32 cl = v.cut_l, ch = v.cut_h;
-    v.work |= peak > U / 2 ? W_VALVE : W_QUIET;
-    if (peak > U / 2) {
-        // loud: the valve, a soft cubic: (z - z^3 / 3) / 4, z the input at a
-        // quarter of its clip (4 U)
-        for (unsigned i = 0; i < frames; ++i) {
+    Chain c;
+    c.g = v.comp_g;
+    c.dg = (target - c.g) >> 6;
+    c.kl = kl;
+    c.kh = v.cut_kh;
+    c.target = target;
+    c.valve = peak > U / 2;
+    v.work |= c.valve ? W_VALVE : W_QUIET;
+    return c;
+}
+// Its samples: x in; y out, or with Level the output itself: y at the
+// voice's gain, held under the ceiling; the output's peak.
+template <bool Valve, bool Level> inline i32 chain_run(Voice& v, const Chain& c, const i32* x, i32* y, i32 gain) {
+    i32 g = c.g, cl = v.cut_l, ch = v.cut_h, most = 0;
+    const i32 dg = c.dg, kl = c.kl, kh = c.kh;
+    for (unsigned i = 0; i < frames; ++i) {
+        i32 s;
+        if (Valve) {
+            // loud: the valve, a soft cubic: (z - z^3 / 3) / 4, z the input at a
+            // quarter of its clip (4 U)
             const i32 z = shl(clamp(multiply(x[i], g), -(1 << 29) + 1, (1 << 29) - 1), 2);
-            g += dg;
-            const i32 s = (z >> 2) - multiply(multiply(multiply(z, z), z), Q31(1.0 / 12.0));
-            cl += multiply(s - cl, kl);
-            ch += multiply(cl - ch, kh);
-            y[i] = cl - ch;
+            s = (z >> 2) - multiply(multiply(multiply(z, z), z), Q31(1.0 / 12.0));
+        } else {
+            // quiet: the valve is as good as straight
+            s = multiply(x[i], g);
         }
-    } else {
-        // quiet: the valve is as good as straight
-        for (unsigned i = 0; i < frames; ++i) {
-            const i32 s = multiply(x[i], g);
-            g += dg;
-            cl += multiply(s - cl, kl);
-            ch += multiply(cl - ch, kh);
+        g += dg;
+        cl += multiply(s - cl, kl);
+        ch += multiply(cl - ch, kh);
+        if (Level) {
+            const i32 o = shl(clamp(multiply(cl - ch, gain), -(one >> 6), one >> 6), 6);
+            y[i] = o;
+            most = imax(most, absolute(o));
+        } else {
             y[i] = cl - ch;
         }
     }
     v.cut_l = cl;
     v.cut_h = ch;
-    v.comp_g = target;
+    v.comp_g = c.target;
+    return most;
+}
+inline i32 peak_of(const i32* x) {
+    i32 peak = 0;
+    for (unsigned i = 0; i < frames; ++i) { const i32 a = absolute(x[i]); if (a > peak) peak = a; }
+    return peak;
+}
+// The chain for a block: x in, y out (before the player, the level and the needle).
+inline void chain_block(Voice& v, const i32* x, i32* y) {
+    const Chain c = chain_gains(v, peak_of(x));
+    if (c.valve) chain_run<true, false>(v, c, x, y, 0);
+    else chain_run<false, false>(v, c, x, y, 0);
+}
+// The room's outputs ry back at the full rate into x, as room_add does, and
+// x's peak.
+inline i32 room_add_peak(const i32* ry, i32* x) {
+    i32 peak = 0;
+    for (unsigned j = 0; j < frames / 8; ++j) {
+        const i32 prev = ry[j], y = ry[j + 1], d = (y - prev) >> 3;
+        i32* xs = x + 8 * j;
+        i32 r = prev;
+        for (unsigned k = 0; k < 7; ++k) {
+            r += d;
+            const i32 a = add(xs[k], r);
+            xs[k] = a;
+            peak = imax(peak, absolute(a));
+        }
+        const i32 a = add(xs[7], y);
+        xs[7] = a;
+        peak = imax(peak, absolute(a));
+    }
+    return peak;
 }
 inline void light_block(Voice& v, i32* y) {
     // WEIGHT, light: the stylus cannot hold the groove's loudest swings:
@@ -474,31 +520,13 @@ inline void play_block(Voice& v, const i32* x, i32* y) {
     brush_block(v, y);
 }
 
-inline void render(Voice& voice, Shared& shared, u32, opxy::Output output, opxy::Parameters parameters, opxy::Pitch) {
-    voice.work = voice.struck_modes = voice.ringing_modes = voice.noise_layers = voice.grain_layers = 0;
-    if (voice.pending) {
-        // the note's setup takes its first block, which is silent: the hit
-        // starts on the next (1.5 ms later), so no block does both
-        begin(voice, shared, parameters);
-        voice.work = W_BEGIN;
-        for (unsigned i = 0; i < frames; ++i) output[i] = 0;
-        return;
-    }
-    if (voice.done) {
-        for (unsigned i = 0; i < frames; ++i) output[i] = 0;
-        return;
-    }
-    i32 x[frames];
-    record_block(voice, x);
-    play_block(voice, x, output);
-    // the needle: landing late fades the hit in; lifting fades all of it out
-    const u32 t = voice.t;
-    i32 og = voice.out_g, step = 0;
-    if (voice.land_len && t + frames > voice.pre) step = voice.land_step;
-    if (t + frames > voice.lift_at) step = -voice.lift_step;
-    voice.t += frames;
-    const i32 gain = voice.gain;
+// A block with the player's stages or the needle moving: the room into the
+// record, the chain, the player, then the level, faded by the needle; the
+// output's peak.
+inline i32 play_out(Voice& voice, i32* x, const i32* ry, bool room, opxy::Output output, i32 og, i32 step, i32 gain) {
     i32 most = 0;
+    if (room) room_add(ry, x);
+    play_block(voice, x, output);
     if (step || og != one) {
         voice.work |= W_NEEDLE;
         const i32 to = clamp(add(og, clamp(step, -(one >> 6), one >> 6) * 64), 0, one);
@@ -537,6 +565,41 @@ inline void render(Voice& voice, Shared& shared, u32, opxy::Output output, opxy:
             output[i] = y;
             most = imax(most, absolute(y));
         }
+    }
+    return most;
+}
+
+inline void render(Voice& voice, Shared& shared, u32, opxy::Output output, opxy::Parameters parameters, opxy::Pitch) {
+    voice.work = voice.struck_modes = voice.ringing_modes = voice.noise_layers = voice.grain_layers = 0;
+    if (voice.pending) {
+        // the note's setup takes its first block, which is silent: the hit
+        // starts on the next (1.5 ms later), so no block does both
+        begin(voice, shared, parameters);
+        voice.work = W_BEGIN;
+        for (unsigned i = 0; i < frames; ++i) output[i] = 0;
+        return;
+    }
+    if (voice.done) {
+        for (unsigned i = 0; i < frames; ++i) output[i] = 0;
+        return;
+    }
+    i32 x[frames], ry[frames / 8 + 1];
+    const bool room = record_block(voice, x, ry);
+    // the needle: landing late fades the hit in; lifting fades all of it out
+    const u32 t = voice.t;
+    i32 og = voice.out_g, step = 0;
+    if (voice.land_len && t + frames > voice.pre) step = voice.land_step;
+    if (t + frames > voice.lift_at) step = -voice.lift_step;
+    voice.t += frames;
+    const i32 gain = voice.gain;
+    i32 most = 0;
+    if (!step && og == one && !voice.light && !voice.heavy && !voice.wear && !voice.tone && !voice.brush) {
+        // the steady block, with none of the player's stages: the room into
+        // the record, then the chain and the level in one pass
+        const Chain c = chain_gains(voice, room ? room_add_peak(ry, x) : peak_of(x));
+        most = c.valve ? chain_run<true, true>(voice, c, x, output, gain) : chain_run<false, true>(voice, c, x, output, gain);
+    } else {
+        most = play_out(voice, x, ry, room, output, og, step, gain);
     }
     // the stylus leaving the groove: one cycle at 55 Hz, its second half
     // smaller, at a level of its own whatever the hit's

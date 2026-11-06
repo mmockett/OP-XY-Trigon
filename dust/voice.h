@@ -592,19 +592,20 @@ __attribute__((cold)) inline void set_room(Voice& v, i32 send, i32 lrt, i32 ldam
     v.rmix = rmix;
     v.rprev = 0;
 }
-// The room's block: x in (the close microphone), x out with the room added.
-inline void room_block(Voice& v, i32* x) {
-    if (!v.send) return;
+// The room's block, from x (the close microphone): its eight outputs, one
+// each eight samples, into y[1..8], and the last block's in y[0].
+inline void room_run(Voice& v, const i32* x, i32* ry) {
     v.work |= W_ROOM;
-    i32 prev = v.rprev;
+    ry[0] = v.rprev;
     const i32 k = v.rk, send = v.send, mixg = v.rmix, tail = v.tail;
     i16* const r = v.room;
     u32 w = v.rpos;
     const u32 n0 = v.rlen[0], n1 = v.rlen[1], n2 = v.rlen[2], n3 = v.rlen[3];
     i32 l0 = v.rlp[0], l1 = v.rlp[1], l2 = v.rlp[2], l3 = v.rlp[3];
     const i32 g0 = v.rg[0], g1 = v.rg[1], g2 = v.rg[2], g3 = v.rg[3];
-    for (unsigned i = 0; i < frames; i += 8) {
-        const i32 in = multiply((x[i] >> 2) + (x[i + 2] >> 2) + (x[i + 4] >> 2) + (x[i + 6] >> 2) + tail, send);
+    for (unsigned j = 0; j < frames / 8; ++j) {
+        const i32* xs = x + 8 * j;
+        const i32 in = multiply((xs[0] >> 2) + (xs[2] >> 2) + (xs[4] >> 2) + (xs[6] >> 2) + tail, send);
         const i32 s0 = r[((w - n0) & 31u) << 2] * 8192, s1 = r[(((w - n1) & 31u) << 2) + 1] * 8192;
         const i32 s2 = r[(((w - n2) & 31u) << 2) + 2] * 8192, s3 = r[(((w - n3) & 31u) << 2) + 3] * 8192;
         const i32 sum = (s0 >> 1) + (s1 >> 1) + (s2 >> 1) + (s3 >> 1);   // Householder: x - (2/4) sum
@@ -618,21 +619,26 @@ inline void room_block(Voice& v, i32* x) {
         o[2] = static_cast<i16>(clamp(multiply(l2, g2) >> 13, -32767, 32767));
         o[3] = static_cast<i16>(clamp(multiply(l3, g3) >> 13, -32767, 32767));
         ++w;
-        const i32 y = multiply((s0 >> 2) + (s1 >> 2) - (s2 >> 2) - (s3 >> 2), mixg);
-        // back to the full rate, a straight line between the room's samples
-        const i32 d = (y - prev) >> 3;
-        x[i] = add(x[i], prev + d);
-        x[i + 1] = add(x[i + 1], prev + 2 * d);
-        x[i + 2] = add(x[i + 2], prev + 3 * d);
-        x[i + 3] = add(x[i + 3], prev + 4 * d);
-        x[i + 4] = add(x[i + 4], prev + 5 * d);
-        x[i + 5] = add(x[i + 5], prev + 6 * d);
-        x[i + 6] = add(x[i + 6], prev + 7 * d);
-        x[i + 7] = add(x[i + 7], y);
-        prev = y;
+        ry[j + 1] = multiply((s0 >> 2) + (s1 >> 2) - (s2 >> 2) - (s3 >> 2), mixg);
     }
     v.rpos = w;
     v.rlp[0] = l0; v.rlp[1] = l1; v.rlp[2] = l2; v.rlp[3] = l3;
-    v.rprev = prev;
+    v.rprev = ry[frames / 8];
+}
+// The room's outputs ry back at the full rate, a straight line between them,
+// added into x.
+inline void room_add(const i32* ry, i32* x) {
+    for (unsigned j = 0; j < frames / 8; ++j) {
+        const i32 prev = ry[j], y = ry[j + 1], d = (y - prev) >> 3;
+        i32* xs = x + 8 * j;
+        xs[0] = add(xs[0], prev + d);
+        xs[1] = add(xs[1], prev + 2 * d);
+        xs[2] = add(xs[2], prev + 3 * d);
+        xs[3] = add(xs[3], prev + 4 * d);
+        xs[4] = add(xs[4], prev + 5 * d);
+        xs[5] = add(xs[5], prev + 6 * d);
+        xs[6] = add(xs[6], prev + 7 * d);
+        xs[7] = add(xs[7], y);
+    }
 }
 }
