@@ -527,7 +527,9 @@ static __attribute__((noinline)) void setup_bow(Voice& v, const i32* c, const Co
     const i32 lf0 = shape::along(shape::pitch[M::BOW], c[0]) + k.lt;
     const i32 press = c[2];
     const i32 x = Q16(0.04) + mul16(c[5], Q16(0.28));
-    for (u32 n = 1; n <= 12; ++n) {
+    // (the first six partials, the lowest two doubled: past the sixth the
+    // thread's smoothed sawtooth gives the string little to answer)
+    for (u32 n = 1; n <= 6; ++n) {
         const i32 lf = lf0 + tables::lnum[n];
         const i32 a = mul(sinpi(n * static_cast<u32>(x)), Q31(0.000006));
         const i32 sg = exp16(log16(Q16(1.0 / 1.4)) + mul16(Q16(0.3), lf - lf0));
@@ -543,6 +545,7 @@ static __attribute__((noinline)) void setup_bow(Voice& v, const i32* c, const Co
     v.k[0] = lf0;
     v.k[3] = k.detune;
     v.k[1] = (c[4] - 32768) * 2;   // BEND, -1..1 octave, Q16
+    if (v.k[1] > -1024 && v.k[1] < 1024) v.k[1] = 0;   // at its centre (63, 64) the pitch holds
     v.bdraw = samples(shape::along(shape::draw, c[3]));
     v.binc = increment(lf0);
     v.bphase = 0;
