@@ -203,7 +203,7 @@ inline void render(Voice& voice, Shared& shared, u32, opxy::Output output, opxy:
     for (unsigned i = 0; i < frames; ++i) {
         const i32 y = clamp(mul(x[i], gain), -(one >> 6), one >> 6) * 64;
         output[i] = y;
-        most |= absolute(y);
+        most |= magnitude(y);
     }
     if (levels::limit[voice.model]) limit(voice, output, most);   // level: limiter
     // (tools/calibrate.py builds a copy without the lines marked "level:", to
