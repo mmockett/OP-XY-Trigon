@@ -406,7 +406,7 @@ FLICKER_APART void draw_scratch(Voice& v, i32* x) {
         const i32 body = (sine(pa) >> 2) + (sine(pb) >> 3);   // Q31 / 4 + / 8
         if (--count <= 0) { held = noise(seed) >> 1; count = hold; }
         const i32 n = sv.band(held >> 1, f, q);
-        x[i] = (multiply(body, e0) >> 1) + multiply(n, e1) / 4;
+        x[i] = (multiply(body, e0) >> 1) + div2k(multiply(n, e1), 2);
         e0 += de0;
         e1 += de1;
     }
@@ -655,7 +655,7 @@ FLICKER_APART void draw_ornament(Voice& v, i32* x) {
     for (unsigned i = 0; i < frames; ++i) {
         const i32 n = multiply(noise(seed) >> 3, wn);
         const i32 h = sv.high((rings[i] + n) >> 1, f, q);
-        x[i] = multiply(opxy::q31::add(h, sv.bp >> 2), e) / 2;
+        x[i] = div2k(multiply(opxy::q31::add(h, sv.bp >> 2), e), 1);
         e += de0;
     }
     v.ph[0] = p0; v.ph[1] = p1; v.ph[2] = p2; v.ph[3] = p3; v.ph[4] = p4; v.ph[5] = p5;
@@ -742,7 +742,7 @@ FLICKER_APART void draw_wave(Voice& v, i32* x) {
     for (unsigned i = 0; i < frames; ++i) {
         pa += a; pb += b;
         const i32 w = multiply(sv.low(drawn(pa, bend, height) >> 1, f, q), main) + multiply(sine(pb) >> 1, sub);
-        x[i] = multiply(w, e) / 2;
+        x[i] = div2k(multiply(w, e), 1);
         e += de;
     }
     v.sv[0] = sv;
@@ -770,7 +770,7 @@ FLICKER_APART void draw_claw(Voice& v, i32* x) {
         // the ring fed a quarter as hard and heard four times as loud, so its
         // state has room at the highest, longest ring
         const i32 ring = clamp(sv.band(ex >> 3, f, q), -(1 << 29), (1 << 29) - 1) * 4;
-        x[i] = clamp(multiply(opxy::q31::add(ring, multiply(n, multiply(burst, grit)) / 4), Q31(0.9)), -(1 << 30), (1 << 30) - 1) * 2;
+        x[i] = clamp(multiply(opxy::q31::add(ring, div2k(multiply(n, multiply(burst, grit)), 2)), Q31(0.9)), -(1 << 30), (1 << 30) - 1) * 2;
         burst = multiply(burst, bk);
     }
     v.k[8] = next;
