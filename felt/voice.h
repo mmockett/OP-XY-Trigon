@@ -54,7 +54,7 @@ struct Voice {
     i32 gain, lim;             // the output gain (Q31 of 64), the transient limiter's gain now
     u32 waiting;               // the note still has something to come (a bounce, a shake, a draw)
     // the modes: [0, n) the string and its company; [16, 20) the pedal's strings
-    u32 n, high;               // modes in use; high: coefficients are sin, not 2 sin (modes past 7 kHz)
+    u32 n, high;               // modes in use; bit 0: coefficients are sin, not 2 sin (modes past 7 kHz); bit 1: low modes may run at half the rate
     u32 live;                  // bit k: mode k still rings
     u32 bent;                  // BOW: the string's modes [0, bent) bend along the draw
     u32 glides;                // THUD, TOM: bit k, mode k glides
@@ -71,7 +71,7 @@ struct Voice {
     // a noise exciter (brush, plank, bow's rosin): its level now and its change a block
     i32 nlevel, nk, ntarget, nrise;
     OnePole nhp, nlp;
-    i32 nhpk, nlpk;
+    i32 nhpk, hprev;           // ...; the half-rate modes' last sample
     // scheduled strikes (the lid's bounces, beads): when the next comes, how many left
     u32 at, left;
     i32 samp, sk;              // the next strike's height, and its change from one to the next
@@ -86,7 +86,9 @@ struct Voice {
     Svf wsv;
     OnePole whp, whp2;
     // the glide (tension) or the bow's bend: the pitch over its base now, Q30, and its change
-    i32 bend, bend_k, bend_step, bend_target;
+    i32 bend, bend_k;
+    u32 halves;                // bit k: mode k runs at half the sample rate
+    i32 hprev_pedal;           // the pedal's half-rate strings' last sample
     // the damper: when it lands (samples), and whether it has
     u32 damp_at, damped;
     // the bow: its phase and increment, its envelope
@@ -104,15 +106,24 @@ struct Voice {
 // Adds a mode at lhz (log2 Hz) with coupling g, free loss sigma and damped
 // loss sigma_d (Q16 per second). Returns its index, or -1 if out of room or
 // over the voice's top.
+// Where the voice allows it (high bit 1), a mode that stays low (under
+// 2.4 kHz; under 800 Hz on a gliding string, which starts up to two octaves
+// higher) runs at half the sample rate: its coefficient and its loss for
+// two samples a step.
+inline bool half_rate(const Voice& v, i32 lhz) {
+    return (v.high & 2) && lhz < (v.model == M::THUD || v.model == M::TOM ? L(800.0) : L(2400.0));
+}
 static __attribute__((noinline)) i32 add_mode(Voice& v, i32 lhz, i32 g, i32 sigma, i32 sigma_d) {
     if (v.n >= max_modes) return -1;
-    if (lhz > (v.high ? L(10500.0) : L(7000.0)) || lhz < L(16.0)) return -1;
+    if (lhz > ((v.high & 1) ? L(10500.0) : L(7000.0)) || lhz < L(16.0)) return -1;
     Mode& m = v.mode[v.n];
-    const i32 s = sin_inc(increment(lhz));
-    m.f = m.base = v.high ? s : s * 2;
+    const bool half = half_rate(v, lhz);
+    const i32 s = sin_inc(increment(half ? lhz + octave : lhz));
+    m.f = m.base = (v.high & 1) ? s : s * 2;
     m.g = g;
     m.lf = lhz;
-    m.r = decay_over(sigma, 2);
+    m.r = decay_over(sigma, half ? 4 : 2);
+    if (half) v.halves |= 1u << v.n;
     m.sd = sigma_d;
     m.l = m.b = 0;
     v.live |= 1u << v.n;
@@ -122,10 +133,13 @@ static __attribute__((noinline)) i32 add_mode(Voice& v, i32 lhz, i32 g, i32 sigm
 static __attribute__((noinline)) void add_pedal(Voice& v, i32 lhz, i32 sigma) {
     if (v.npedal >= pedal_modes || lhz > L(7000.0) || lhz < L(20.0)) return;
     Mode& m = v.mode[max_modes + v.npedal];
-    const i32 s = sin_inc(increment(lhz));
+    const bool half = half_rate(v, lhz);
+    const i32 s = sin_inc(increment(half ? lhz + octave : lhz));
     m.f = m.base = s * 2;
     m.g = one;
-    m.r = decay_over(sigma, 2);
+    m.lf = lhz;
+    m.r = decay_over(sigma, half ? 4 : 2);
+    if (half) v.halves |= 1u << (max_modes + v.npedal);
     m.sd = 0;
     m.l = m.b = 0;
     ++v.npedal;
@@ -135,10 +149,10 @@ static __attribute__((noinline)) void add_pedal(Voice& v, i32 lhz, i32 sigma) {
 // Its second state loses r each sample, so the mode's swing loses about
 // sqrt(r): one multiply a sample, and no work between samples. (Each loop is
 // its own function, so tools/cpu.py can count it in the compiled code.)
-static __attribute__((noinline)) void run_free(Mode& m, i32* out) {
+template <unsigned N> static __attribute__((noinline)) void run_free(Mode& m, i32* out) {
     i32 l = m.l, b = m.b;
     const i32 f = m.f, r = m.r;
-    for (unsigned i = 0; i < frames; ++i) {
+    for (unsigned i = 0; i < N; ++i) {
         l += mul(f, b);
         b = mul(b, r) - mul(f, l);
         out[i] = add(out[i], b);
@@ -146,10 +160,10 @@ static __attribute__((noinline)) void run_free(Mode& m, i32* out) {
     m.l = l;
     m.b = b;
 }
-static __attribute__((noinline)) void run_driven(Mode& m, const i32* x, i32* out) {
+template <unsigned N> static __attribute__((noinline)) void run_driven(Mode& m, const i32* x, i32* out) {
     i32 l = m.l, b = m.b;
     const i32 f = m.f, g = m.g, r = m.r;
-    for (unsigned i = 0; i < frames; ++i) {
+    for (unsigned i = 0; i < N; ++i) {
         l += mul(f, b);
         b = mul(b, r) - mul(f, l) + mul(x[i], g);
         out[i] = add(out[i], b);
@@ -158,10 +172,10 @@ static __attribute__((noinline)) void run_driven(Mode& m, const i32* x, i32* out
     m.b = b;
 }
 // The same for modes above 7 kHz, whose coefficient is held at half.
-static __attribute__((noinline)) void run_free_high(Mode& m, i32* out) {
+template <unsigned N> static __attribute__((noinline)) void run_free_high(Mode& m, i32* out) {
     i32 l = m.l, b = m.b;
     const i32 f = m.f, r = m.r;
-    for (unsigned i = 0; i < frames; ++i) {
+    for (unsigned i = 0; i < N; ++i) {
         const i32 p = mul(f, b);
         l = add(l, add(p, p));
         const i32 q = mul(f, l);
@@ -171,10 +185,10 @@ static __attribute__((noinline)) void run_free_high(Mode& m, i32* out) {
     m.l = l;
     m.b = b;
 }
-static __attribute__((noinline)) void run_driven_high(Mode& m, const i32* x, i32* out) {
+template <unsigned N> static __attribute__((noinline)) void run_driven_high(Mode& m, const i32* x, i32* out) {
     i32 l = m.l, b = m.b;
     const i32 f = m.f, g = m.g, r = m.r;
-    for (unsigned i = 0; i < frames; ++i) {
+    for (unsigned i = 0; i < N; ++i) {
         const i32 p = mul(f, b);
         l = add(l, add(p, p));
         const i32 q = mul(f, l);
@@ -184,38 +198,77 @@ static __attribute__((noinline)) void run_driven_high(Mode& m, const i32* x, i32
     m.l = l;
     m.b = b;
 }
-inline void run_low(Mode& m, const i32* x, i32* out) {
-    if (x && m.g) run_driven(m, x, out); else run_free(m, out);
+template <unsigned N> inline void run_low(Mode& m, const i32* x, i32* out) {
+    if (x && m.g) run_driven<N>(m, x, out); else run_free<N>(m, out);
 }
-inline void run_high(Mode& m, const i32* x, i32* out) {
-    if (x && m.g) run_driven_high(m, x, out); else run_free_high(m, out);
+template <unsigned N> inline void run_high(Mode& m, const i32* x, i32* out) {
+    if (x && m.g) run_driven_high<N>(m, x, out); else run_free_high<N>(m, out);
 }
-// Every live mode over a block. A mode rung down to a few steps above zero
-// with nothing driving it stops: fixed point would keep it circling there.
-inline void run_modes(Voice& v, const i32* x, i32* out) {
-    for (u32 k = 0; k < v.n; ++k) {
-        if (!(v.live & (1u << k))) continue;
+// Half-rate samples h back at the full rate into out: a straight line
+// between them, half a sample late (prev: the last block's last).
+inline void half_add(i32& prev, const i32* h, i32* out) {
+    i32 p = prev;
+    for (unsigned j = 0; j < frames / 2; ++j) {
+        const i32 y = h[j];
+        out[2 * j] = add(out[2 * j], (p >> 1) + (y >> 1));
+        out[2 * j + 1] = add(out[2 * j + 1], y);
+        p = y;
+    }
+    prev = p;
+}
+// A drive x at half the rate: each pair of its samples summed (halves, then
+// doubled with saturation).
+inline void half_drive(const i32* x, i32* xh) {
+    for (unsigned j = 0; j < frames / 2; ++j) {
+        const i32 d = (x[2 * j] >> 1) + (x[2 * j + 1] >> 1);
+        xh[j] = add(d, d);
+    }
+}
+// Modes [first, last) over a block, those at half the rate into h; whether
+// any ran at half the rate. A mode rung down to a few steps above zero with
+// nothing driving it stops: fixed point would keep it circling there.
+inline bool run_range(Voice& v, u32 first, u32 last, const i32* x, const i32* xh, i32* out, i32* h, bool stops) {
+    bool any = false;
+    for (u32 k = first; k < last; ++k) {
+        if (k < max_modes && !(v.live & (1u << k))) continue;
         Mode& m = v.mode[k];
-        if (v.high) run_high(m, x, out); else run_low(m, x, out);
-        if (!x && absolute(m.l) < 256 && absolute(m.b) < 256) {
+        if (v.halves & (1u << k)) {
+            any = true;
+            if (v.high & 1) run_high<frames / 2>(m, xh, h); else run_low<frames / 2>(m, xh, h);
+        } else {
+            if (v.high & 1) run_high<frames>(m, x, out); else run_low<frames>(m, x, out);
+        }
+        if (stops && !x && absolute(m.l) < 256 && absolute(m.b) < 256) {
             m.l = m.b = 0;
             v.live &= ~(1u << k);
         }
     }
+    return any;
 }
-// The pedal's strings, driven by the voice's sound in, adding theirs to out.
+// Every live mode over a block.
+inline void run_modes(Voice& v, const i32* x, i32* out) {
+    i32 h[frames / 2], xh[frames / 2];
+    for (unsigned j = 0; j < frames / 2; ++j) h[j] = 0;
+    if (x && v.halves) half_drive(x, xh);
+    if (run_range(v, 0, v.n, x, x ? xh : nullptr, out, h, true) || v.hprev) half_add(v.hprev, h, out);
+}
 // The pedal's strings, driven by what the voice sounds so far, into it.
 inline void run_pedal(Voice& v, i32* out) {
     if (!v.npedal) return;
-    i32 x[frames];
+    i32 x[frames], xh[frames / 2], h[frames / 2];
     const i32 g = v.pedal_g;
     for (unsigned i = 0; i < frames; ++i) x[i] = mul(out[i], g);
-    for (u32 k = 0; k < v.npedal; ++k) run_low(v.mode[max_modes + k], x, out);
+    for (unsigned j = 0; j < frames / 2; ++j) h[j] = 0;
+    if (v.halves >> max_modes) half_drive(x, xh);
+    const u32 high = v.high;
+    v.high &= ~1u;   // the pedal's strings are low modes, whatever the voice's
+    if (run_range(v, max_modes, max_modes + v.npedal, x, xh, out, h, false)) half_add(v.hprev_pedal, h, out);
+    v.high = high;
 }
 // The damper lands: every string mode takes its damped loss.
 static __attribute__((noinline)) void land_damper(Voice& v, u32 count) {
     for (u32 k = 0; k < count && k < v.n; ++k)
-        if (v.mode[k].sd) v.mode[k].r = decay_over(v.mode[k].sd, 2);
+        if (v.mode[k].sd) v.mode[k].r = decay_over(v.mode[k].sd, (v.halves & (1u << k)) ? 4 : 2);
     v.damped = 1;
 }
 // The glide: the string's gliding modes at (1 + 3 bend) times their base
@@ -227,7 +280,7 @@ static __attribute__((noinline)) void bend_modes(Voice& v) {
         if (!(v.glides & (1u << k))) continue;
         Mode& md = v.mode[k];
         const i32 room = Q31(0.95) - md.base;
-        const i32 up = md.base < Q31(0.3) ? mul(md.base, m) * 6 : room;
+        const i32 up = md.base < ((v.halves & (1u << k)) ? Q31(0.6) : Q31(0.3)) ? mul(md.base, m) * 6 : room;
         md.f = md.base + (up < room ? up : room);
     }
 }

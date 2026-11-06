@@ -185,7 +185,6 @@ static __attribute__((noinline)) void setup_rattle(Voice& v, const i32* c, const
 static __attribute__((noinline)) void setup_lid(Voice& v, const i32* c, const Common& k) {
     const i32 lb = shape::along(shape::pitch[M::LID], c[0]) + k.lt;
     const i32 snap = c[4], hollow = c[5];
-    v.high = 0;
     // the board's modes, driven by the slaps
     static const i32 ratio[3] = {L(0.34), L(0.71), L(1.27)};
     static const i32 tau[3] = {L(0.026), L(0.016), L(0.008)};
@@ -560,6 +559,9 @@ static __attribute__((noinline)) void setup_bow(Voice& v, const i32* c, const Co
 // ------------------------------------------------------------ dispatch
 inline void setup_model(Voice& v, u32 m, const i32* c, i32 tune) {
     const Common k = common(v, c, tune);
+    // low modes may run at half the rate, but for BOW's (its bend reaches an
+    // octave up); BRUSH and CHAIN set their high modes themselves
+    v.high = m == M::BOW ? 0 : 2;
     // the soundboard's soft top, lower with SOFT: the una corda's rounder note
     v.topk = onepole_k((m == M::CHAIN ? L(10000.0) : L(5200.0)) - mul16(k.soft, Q16(1.8)));
     switch (m) {
