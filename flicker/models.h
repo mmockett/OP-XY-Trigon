@@ -49,7 +49,7 @@ inline void crack(Voice& v, i32* x) {
         x[i] += multiply(noise(seed) >> 3, a);
         a = multiply(a, k);
     }
-    v.s[14] = a < 4096 ? 0 : a;
+    v.s[14] = a < (one >> 12) ? 0 : a;   // gone 72 dB down
     v.seed = seed;
 }
 // A pitch glide's increment through a block: from inc0 toward inc1.
@@ -434,7 +434,7 @@ FLICKER_APART void draw_ring(Voice& v, i32* x) {
         if (burst) {
             y += multiply(sv.band(multiply(noise(seed) >> 3, burst), f, q), Q31(0.9));
             burst = multiply(burst, bk);
-            if (burst < 4096) burst = 0;
+            if (burst < (one >> 12)) burst = 0;   // gone 72 dB down
         }
         x[i] = y;
         e0 += de0;

@@ -53,12 +53,13 @@ inline bool pad_control_text(u32 field, i32 value, char* text) {
     return true;
 }
 
-// A note's sound has ended once its output has stayed under -96 dB for
-// 90 ms with nothing still to come (a stroke, an echo, a claw's tick). Its
+// A note's sound has ended once its output has stayed 72 dB under the
+// ceiling for 23 ms with nothing still to come (a stroke, an echo, a claw's
+// tick). Its
 // voice then writes silence without drawing, and finished tells the SDK it
 // may free the voice.
-const i32 quiet_under = 1 << 15;
-const u32 quiet_blocks = 62;
+const i32 quiet_under = 1 << 18;
+const u32 quiet_blocks = 16;
 inline bool finished(const Voice& voice, const Shared&) { return voice.done != 0; }
 
 // A control word (raw << 24) as a Q16 unit.
