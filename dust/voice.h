@@ -495,8 +495,9 @@ inline void add_jingle(Voice& v, i32 lat, i32 level) {
     m.level[m.bursts] = level;
     ++m.bursts;
 }
-// The partials for a block, in two passes of three oscillators (so their
-// phases stay in registers), into w at U.
+// The metal's source for a block: the partials, in two passes of three
+// oscillators (so their phases stay in registers), at U, and the noise, by
+// its share, into w.
 inline void metal_partials(Metal& m, i32* w) {
     {
         u32 p0 = m.ph[0], p1 = m.ph[1], p2 = m.ph[2];
@@ -511,23 +512,24 @@ inline void metal_partials(Metal& m, i32* w) {
     {
         u32 p3 = m.ph[3], p4 = m.ph[4], p5 = m.ph[5];
         const u32 i3 = m.inc[3], i4 = m.inc[4], i5 = m.inc[5];
+        const i32 sq = multiply(one - m.nmix, U / 9), nm = m.nmix;
+        u32 seed = m.seed;
         for (unsigned i = 0; i < frames; ++i) {
             p3 += i3; p4 += i4; p5 += i5;
             const u32 b = (p3 >> 31) + (p4 >> 31) + (p5 >> 31) + ((p3 ^ p4) >> 31) + ((p4 ^ p5) >> 31);
-            w[i] = (static_cast<i32>(b) + w[i]) * 2 - 9;   // -9..9
+            w[i] = ((static_cast<i32>(b) + w[i]) * 2 - 9) * sq + multiply(noise(seed), nm);   // the partials -9..9
         }
         m.ph[3] = p3; m.ph[4] = p4; m.ph[5] = p5;
+        m.seed = seed;
     }
 }
-// The metal's filters for samples from..to of its partials w, at level a, into x.
+// The metal's filters for samples from..to of its source w, at level a, into x.
 inline void metal_run(Metal& m, const i32* w, i32* x, unsigned from, unsigned to, i32 a) {
     i32 sl = m.sl, sb = m.sb;
     const i32 f = m.f, q = m.q;
-    const i32 sq = multiply(one - m.nmix, U / 9), nm = m.nmix;
     const i32 gh = multiply(m.gh, a), gb = multiply(m.gb, a);
-    u32 seed = m.seed;
     for (unsigned i = from; i < to; ++i) {
-        const i32 in = w[i] * sq + multiply(noise(seed), nm);
+        const i32 in = w[i];
         sl += multiply(f, sb);
         const i32 qb = multiply(q, sb);
         const i32 h = in - sl - qb - qb;
@@ -536,7 +538,6 @@ inline void metal_run(Metal& m, const i32* w, i32* x, unsigned from, unsigned to
     }
     m.sl = sl;
     m.sb = sb;
-    m.seed = seed;
 }
 inline void metal_block(Voice& v, i32* x, bool retune) {
     Metal& m = v.metal;
