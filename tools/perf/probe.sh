@@ -8,7 +8,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 T=$SDK/local/toolchain/bin
 W=$(mktemp -d "${TMPDIR:-/tmp}/probe.XXXXXX")
 "$RUN" --help 2>&1 | grep -i -E "mem|debug|trace|profile|max" | head -30
-for p in exit exitlow write; do
+for p in outc exit exitlow write; do
     "$T/bfin-elf-as" -mcpu=bf707 -o "$W/$p.o" "$HERE/probe/$p.s" && "$T/bfin-elf-ld" -T "$HERE/sim.ld" -o "$W/$p.elf" "$W/$p.o" || continue
     for opt in "" "--memory-size 0x8000000" "--memory-region 0,0x8000000" "--model bf537 --memory-region 0,0x8000000" "--environment user --memory-region 0,0x8000000"; do
         out=$(perl -e 'alarm 15; exec @ARGV' "$RUN" $opt "$W/$p.elf" 2>&1); rc=$?

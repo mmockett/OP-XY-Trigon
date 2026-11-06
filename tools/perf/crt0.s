@@ -1,7 +1,8 @@
-/* Start-up for tools/perf/sim.cpp in the GNU Blackfin simulator's virtual
- * environment (libgloss system calls: P0 the call, R0 the address of its
- * arguments, then EXCPT 0). Turns the cycle counter on, clears .bss, runs
- * main and exits with its result. Not part of any kit. */
+/* Start-up for tools/perf/sim.cpp in the GNU Blackfin simulator. Turns the
+ * cycle counter on, clears .bss, runs main and stops the simulator (HLT, the
+ * simulator's own pseudo-instruction). Output goes out a character at a
+ * time by OUTC, the simulator's other one: its system calls did not answer.
+ * Not part of any kit. */
 .section .text.start
 .align 2
 .global start
@@ -28,27 +29,24 @@ start:
     SP += -12;
     CALL _main;
     SP += 12;
-    [--SP] = R0;
-    R0 = SP;
-    P0 = 1;                   /* exit */
-    EXCPT 0;
-    NOP;
+    HLT;
 .Lhang:
     JUMP .Lhang;
 
-/* sim_write (text, length): write (1, text, length). */
+/* sim_write (text, length): each character by OUTC. */
 .section .text
 .align 2
 .global sim_write
 .type sim_write, STT_FUNC
 sim_write:
-    [--SP] = R1;
-    [--SP] = R0;
-    R2 = 1;
-    [--SP] = R2;
-    R0 = SP;
-    P0 = 5;                   /* write */
-    EXCPT 0;
-    NOP;
-    SP += 12;
+    P0 = R0;
+    CC = R1 == 0;
+    IF CC JUMP .Ldone;
+.Lnext:
+    R2 = B[P0++] (Z);
+    OUTC R2;
+    R1 += -1;
+    CC = R1 == 0;
+    IF !CC JUMP .Lnext;
+.Ldone:
     RTS;
