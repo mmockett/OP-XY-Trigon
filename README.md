@@ -19,7 +19,7 @@ counted in the compiled code, not yet measured on the OP-XY (below).
 
 <table>
 <tr>
-<td width="50%"><img src="felt/docs/screen.png" width="480" alt="FELT's screen: one note of an upright piano's action, side on, its felt hammer just off the string"></td>
+<td width="50%"><img src="felt/docs/screen.png" width="480" alt="FELT's screen: three piano strings over an iron plate, drawn in isometric, with rubber wedged between them, a damper resting on them and a hammer beneath"></td>
 <td>
 
 ### FELT
@@ -34,15 +34,16 @@ damper, and the strings above the note ring in sympathy.
 PLUCK, BOW<br>
 **Shift, second row:** TUNE, SOFT (the una corda), FX I, FX II
 
-The screen is one note of the piano's action, side on: the key dips, the
-hammer swings to the string, the damper lifts and lands, and whatever is
-wedged in the string changes with the model. *Shown: THUD, the kick.*
+The screen is a textbook plate of the prepared strings: three unisons over the
+iron plate, the bridge that tunes them, the damper, the hammer rising from
+beneath, and whatever is wedged between them, which changes with the model.
+Each part's grey is the encoder that moves it. *Shown: THUD, the kick.*
 [More about FELT](felt/README.md)
 
 </td>
 </tr>
 <tr>
-<td width="50%"><img src="flicker/docs/screen.png" width="480" alt="FLICKER's screen: a strip of 16 mm sound film running through a projector's sound head, a kick drawn on its soundtrack"></td>
+<td width="50%"><img src="flicker/docs/screen.png" width="480" alt="FLICKER's screen: four frames of 16 mm film lying on a slat, drawn in isometric, a kick drawn on its soundtrack and a gate across the middle"></td>
 <td>
 
 ### FLICKER
@@ -57,15 +58,16 @@ valve amplifier's warmth, and when you ask for them its flutter and dust.
 STIPPLE, BOOP, WAVE, CLAW<br>
 **Shift, second row:** TUNE, SLIT (the sound slit), FX I, FX II
 
-The screen is the film running through a projector's sound head. The key's
-sound is drawn on the soundtrack, and each hit pulls one more frame through
-the gate. *Shown: SWEEP, the kick.*
+The screen is four frames of film lying on a slat, the key's sound drawn on
+the soundtrack, the pencil guides of its taper beside it and a gate with the
+slit's light across the middle. Each hit pulls the film one frame along.
+*Shown: SWEEP, the kick.*
 [More about FLICKER](flicker/README.md)
 
 </td>
 </tr>
 <tr>
-<td width="50%"><img src="dust/docs/screen.png" width="480" alt="DUST's screen: a portable record player from the front and above, a 7-inch single on its platter, the tonearm across it"></td>
+<td width="50%"><img src="dust/docs/screen.png" width="480" alt="DUST's screen: a record deck drawn in isometric, a 7-inch single on its platter, the tonearm on the picked bar and the dust brush parked by the rim"></td>
 <td>
 
 ### DUST
@@ -79,9 +81,10 @@ and they are the record player's.
 **Controls:** SPEED, PICK, LIFT, WEIGHT, CUE, WEAR, WARP, DRAG<br>
 **Shift, second row:** TUNE, TONE, FX I, FX II
 
-The screen is the record player from the front and above. The platter turns,
-the arm sits on the bar you pick and lifts when the hit ends, and the dust
-brush rests at the side. *Shown: the kick.*
+The screen is a record deck in isometric. The record's size follows the
+speed, the arm sits on the bar you pick and lifts when the hit ends, the
+grooves wander as the copy wears, and the dust brush drops onto the record as
+it drags. Each part's grey is the encoder that moves it. *Shown: the kick.*
 [More about DUST](dust/README.md)
 
 </td>
