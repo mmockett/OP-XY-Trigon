@@ -399,8 +399,9 @@ __attribute__((cold)) inline void set_layer(Voice& v, u32 k, i32 amp, i32 lf, i3
     n.ldecay = ldecay;
     env_set(n.env, 0, latk, ldecay);
     // a layer of the filter's band alone (no high-pass share) under 2.4 kHz
-    // runs at half the sample rate
-    n.on = amp > 0 ? (gh == 0 && lf + v.lbase <= L(2400) ? 3 : 1) : 0;
+    // runs at half the sample rate (not the clap's body: there it came out
+    // 1.6 LU louder, measured)
+    n.on = amp > 0 ? (gh == 0 && lf + v.lbase <= L(2400) && v.model != 12 ? 3 : 1) : 0;
     layer_tune(n, v.lbase, 0);
 }
 // A burst of layer k at 2^lat s (record time) with its level (log2) and its band shifted.
