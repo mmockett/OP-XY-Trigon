@@ -6,37 +6,88 @@ namespace dust {
 namespace art {
 using opxy::i32;
 const opxy::u32 header_node = 4;
-const opxy::u32 node_count = 23;
+const opxy::u32 node_count = 63;
 // screen (Q10 px) = (ox + (x - y) cos 30, oy + (x + y) / 2 - z) for world x y z in Q4 (16 a px)
 const i32 ox = 233472, oy = 75776;
-// the deck, Q4
-const i32 rx = 832, ry = 896, z_top = 288;
-const i32 r_ref = 560;   // the record node's radius as drawn
-const i32 pivot_x = 1920, pivot_y = 352, pivot_z = 464;
-const i32 arm = 1120, tail = 352, arm_w = 19, arm_t = 13, head_d = 26, stylus = 70;
-const i32 post_x = 192, post_y = 1536, brush_z = 440, brush_drop = 112;
-// the stylus over the record at radii 8, 9, .. 44 px: its plan position (Q4) and its angle
+// the parts' origins on screen, Q10: the record's centre on its surface, the label's print,
+// the dial's top, the fader cap at its middle, the brush arm's root parked
+const i32 centre_x = 235246, centre_y = 111616;
+const i32 mark_x = 224871, mark_y = 112672;
+const i32 dial_x = 162527, dial_y = 120320;
+const i32 cap_x = 269831, cap_y = 169472, cap_travel = 15360;
+const i32 brush_x = 199773, brush_y = 73216, brush_drop = 7168;
+// the record and its grooves' field, Q8 radii
+const i32 r_record = 10240, g_in = 3968, g_out = 9523;
+// the arm, Q4
+const i32 z_top = 288;
+const i32 pivot_x = 1952, pivot_y = 320, pivot_z = 464;
+const i32 arm = 1024, tail = 352, arm_w = 19, arm_t = 13, head_d = 26, stylus = 70;
+// the stylus over the record at radii 14, 15, .. 38 px: its plan position (Q4) and its angle
 // about the spindle on screen (65536 a turn, 0 screen right, clockwise)
-const i32 stylus_lo = 128, stylus_n = 37;
-const i32 stylus_x[37] = {957, 968, 979, 989, 999, 1010, 1020, 1030, 1040, 1051, 1061, 1072, 1082, 1093, 1104, 1115, 1127, 1138, 1149, 1161, 1173, 1185, 1197, 1209, 1222, 1235, 1247, 1260, 1273, 1286, 1300, 1313, 1327, 1341, 1354, 1368, 1383};
-const i32 stylus_y[37] = {924, 942, 959, 975, 990, 1004, 1018, 1032, 1045, 1058, 1071, 1083, 1095, 1107, 1119, 1131, 1142, 1154, 1165, 1176, 1187, 1197, 1208, 1218, 1228, 1238, 1247, 1257, 1266, 1276, 1285, 1293, 1302, 1310, 1319, 1327, 1335};
-const i32 stylus_phi[37] = {10474, 11619, 12435, 13048, 13525, 13905, 14213, 14465, 14673, 14845, 14989, 15109, 15209, 15291, 15359, 15415, 15459, 15494, 15521, 15539, 15552, 15558, 15559, 15555, 15546, 15534, 15518, 15498, 15476, 15450, 15422, 15392, 15359, 15324, 15288, 15249, 15209};
+const i32 stylus_lo = 3584, stylus_n = 25;
+const i32 stylus_x[25] = {1085, 1098, 1110, 1122, 1133, 1144, 1156, 1167, 1178, 1190, 1201, 1213, 1224, 1236, 1248, 1260, 1272, 1284, 1296, 1309, 1321, 1334, 1347, 1360, 1373};
+const i32 stylus_y[25] = {866, 885, 903, 919, 935, 950, 964, 977, 991, 1004, 1016, 1028, 1040, 1052, 1063, 1074, 1085, 1096, 1106, 1117, 1127, 1136, 1146, 1155, 1165};
+const i32 stylus_phi[25] = {9763, 10519, 11114, 11597, 11997, 12332, 12617, 12860, 13070, 13251, 13407, 13543, 13661, 13763, 13851, 13927, 13992, 14047, 14093, 14132, 14163, 14188, 14207, 14220, 14229};
 // the headshell's direction on screen as drawn, Q10
-const i32 head_cos = -1024, head_sin = 16;
+const i32 head_cos = -1024, head_sin = -3;
 // WEAR's fixed wander of each groove point: [half][wall][point], -127..127
 const signed char wander[2][2][32] = {{{-9, -65, -94, -73, 37, 68, 27, 32, 66, 74, 0, -81, -104, -51, -11, -11, 6, 63, 94, 63, -33, -41, -34, -39, -56, -63, 22, 88, 87, 32, 19, 6}, {7, -64, -105, -73, 16, 66, 39, 35, 56, 77, -23, -90, -92, -44, -19, -30, -3, 81, 101, 63, -19, -42, -31, -43, -86, -65, 5, 105, 89, 40, 12, 17}}, {{14, -91, -112, -45, 10, -11, 6, 52, 94, 86, 4, -56, -61, -41, -62, -57, 9, 93, 117, 46, -5, 6, 4, -65, -107, -88, -5, 77, 71, 29, 50, 66}, {-5, -87, -91, -59, 1, 10, 10, 47, 91, 65, -4, -73, -67, -20, -60, -53, 9, 71, 118, 65, -11, 4, -3, -51, -108, -76, 8, 73, 53, 31, 35, 69}}};
+// each model's pictogram: its first node and how many
+const opxy::u32 marks_first = 12, marks_end = 48;
+const opxy::u8 mark_first[15] = {12, 14, 17, 19, 21, 24, 26, 30, 31, 32, 34, 39, 41, 43, 47};
+const opxy::u8 mark_count[15] = {2, 3, 2, 2, 3, 2, 4, 1, 1, 2, 5, 2, 2, 4, 1};
 enum Node : opxy::u32 {
-    record_edge = 12,
-    record_top = 13,
-    label = 14,
-    sticker = 15,
-    weight_side = 16,
-    weight_top = 17,
-    head = 18,
-    needle = 19,
-    brush_side = 20,
-    brush_arm = 21,
-    brush_top = 22,
+    mark_kick_0 = 12,
+    mark_kick_1 = 13,
+    mark_snare_0 = 14,
+    mark_snare_1 = 15,
+    mark_snare_2 = 16,
+    mark_rim_0 = 17,
+    mark_rim_1 = 18,
+    mark_hat_0 = 19,
+    mark_hat_1 = 20,
+    mark_open_0 = 21,
+    mark_open_1 = 22,
+    mark_open_2 = 23,
+    mark_ride_0 = 24,
+    mark_ride_1 = 25,
+    mark_crash_0 = 26,
+    mark_crash_1 = 27,
+    mark_crash_2 = 28,
+    mark_crash_3 = 29,
+    mark_tom_0 = 30,
+    mark_conga_0 = 31,
+    mark_bongo_0 = 32,
+    mark_bongo_1 = 33,
+    mark_tamb_0 = 34,
+    mark_tamb_1 = 35,
+    mark_tamb_2 = 36,
+    mark_tamb_3 = 37,
+    mark_tamb_4 = 38,
+    mark_bell_0 = 39,
+    mark_bell_1 = 40,
+    mark_clap_0 = 41,
+    mark_clap_1 = 42,
+    mark_shake_0 = 43,
+    mark_shake_1 = 44,
+    mark_shake_2 = 45,
+    mark_shake_3 = 46,
+    mark_bass_0 = 47,
+    sticker = 48,
+    weight_side = 49,
+    weight_top = 50,
+    head = 51,
+    needle = 52,
+    dial_33 = 53,
+    dial_45 = 54,
+    dial_78 = 55,
+    cap_left = 56,
+    cap_right = 57,
+    cap_top = 58,
+    cap_line = 59,
+    brush_side = 60,
+    brush_arm = 61,
+    brush_top = 62,
 };
 }
 }

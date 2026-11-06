@@ -2,15 +2,17 @@
 #include "dsp.h"
 
 // DUST's screen: an isometric record deck in the stock look. The plinth,
-// platter, pillar, spindle and the brush's post are artwork; the groove's
-// two halves, the picked bar and the arm are the four reshaping outlines,
-// drawn in the projection make_panel.py writes into art.h; the record, its
-// label and cue sticker, the counterweight, the headshell and the dust brush
-// are nodes placed from the key's controls. The grey is the encoder's: the
-// record (SPEED, CUE) hollow, the grooves (PICK, WEAR) 4B4B4B, the arm
-// (LIFT, WARP) 969696, the counterweight and brush (WEIGHT, DRAG) CDCDCD.
-// A hit drops the head onto the record and spins it a whole number of turns
-// at its speed, settling as the hit ends; the head lifts at LIFT.
+// platter, record, pillar, spindle, speed dial, fader slot and the brush's
+// post are artwork; the groove's two halves, the picked bar and the arm are
+// the four reshaping outlines, drawn in the projection make_panel.py writes
+// into art.h; the dial's pointer, the fader's cap, the cue sticker, the
+// counterweight, the headshell, the dust brush and the model's pictogram on
+// the label are nodes placed from the key's controls. The grey is the
+// encoder's: the record, dial and fader (SPEED, CUE) hollow, the grooves
+// (PICK, WEAR) 4B4B4B, the arm (LIFT, WARP) 969696, the counterweight and
+// brush (WEIGHT, DRAG) CDCDCD. A hit drops the head onto the record and spins
+// it a whole number of turns at its speed, settling as the hit ends; the head
+// lifts at LIFT.
 namespace dust {
 namespace view {
 using namespace opxy::draw;
@@ -50,22 +52,22 @@ inline Turn direction(i32 dx, i32 dy) {
 
 // ---------------------------------------------------------------- the projection
 // World points in Q4 (16 a pixel) to screen points in Q10 px: isometric,
-// x down to the right, y down to the left, z up.
+// x down to the right, y down to the left, z up. lift() takes z in Q10 px.
 struct Pt { i32 x, y; };
-inline Pt project(i32 x, i32 y, i32 z) {
+inline Pt lift(i32 x, i32 y, i32 z) {
     Pt p;
     p.x = art::ox + (((x - y) * 14189) >> 8);   // cos 30, Q14
-    p.y = art::oy + (x + y) * 32 - z * 64;
+    p.y = art::oy + (x + y) * 32 - z;
     return p;
 }
-// A point at radius r (Q4) in a level plane, at angle a about its centre as
-// the screen sees it (65536 a turn, 0 screen right, clockwise): its offset
+// A point at radius r (Q8 px) in a level plane, at angle a about its centre
+// as the screen sees it (65536 a turn, 0 screen right, clockwise): its offset
 // from the centre in Q10 px. The circle is an ellipse sqrt(1.5) wide and
 // sqrt(0.5) tall.
 inline Pt ring(i32 r, i32 a) {
     Pt p;
-    p.x = (((r * cs(a)) >> 4) * 1254) >> 14;
-    p.y = (((r * sn(a)) >> 4) * 724) >> 14;
+    p.x = (((r * cs(a)) >> 8) * 1254) >> 14;
+    p.y = (((r * sn(a)) >> 8) * 724) >> 14;
     return p;
 }
 
@@ -240,6 +242,26 @@ inline i32 spun(const Spin& s, i32 age) {
 const i32 drop_time = 102, lift_time = 205;   // Q10 s: the head's drop at the hit and its lift
 // the arm's outline: how many points each of its eight edges takes, 64 in all
 const u8 runs[8] = {7, 23, 1, 1, 23, 7, 1, 1};
+// SPEED on the deck: the dial's detent (33, 45 or 78, whichever is nearest
+// on a log scale) and the pitch fader's share of the rest, Q10, -1024..1024
+// for -20%..+20%. Past 18% the cap creeps into its last tenth (45's top and
+// 78's foot reach 32% and 24%), so every step of SPEED still moves it.
+struct Detent {
+    u32 index;
+    i32 pitch;
+};
+inline Detent detent_of(i32 speed) {
+    const i32 s = rec::speed_log(speed), lo = -L(45.0 / 33.3333333), hi = L(78.0 / 45.0);
+    Detent d;
+    d.index = s < lo / 2 ? 0u : s > hi / 2 ? 2u : 1u;
+    const i32 x = s - (d.index == 0 ? lo : d.index == 2 ? hi : 0);
+    i32 p = (static_cast<i32>(pow2(x + 10 * octave)) - 1024) * 5;
+    const i32 a = p < 0 ? -p : p;
+    i32 q = a <= 922 ? a : 922 + ((a - 922) * 102) / 716;
+    if (q > 1024) q = 1024;
+    d.pitch = p < 0 ? -q : q;
+    return d;
+}
 }
 using namespace view;
 
@@ -281,45 +303,60 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     if (age < drop_time) down = ease_out(ratio(age, drop_time));
     else if (age < held) down = 1024;
     else if (age < held + lift_time) down = 1024 - ease(ratio(age - held, lift_time));
+    const Pt centre = {art::centre_x, art::centre_y};
 
-    // --- E1, the record: SPEED sizes it, 33 a 12-inch, 45 a 7-inch, 78 a 10-inch (Q4 radius)
-    const i32 rs = r[rec::SPEED];
-    const i32 R = rs <= 64 ? 704 - ((rs * 4506) >> 10) : 422 + (((rs - 64) * 2861) >> 10);
-    const i32 scale = (R * 1024) / art::r_ref;
-    const Pt centre = project(art::rx, art::ry, art::z_top);
-    put(frame, art::record_edge, centre, scale);
-    put(frame, art::record_top, centre, scale);
-    put(frame, art::label, centre, scale);
-    // the grooves' field and its eight bars, outermost first (Q4 radii)
-    const i32 g_in = ((R * 369) >> 10) + 8, g_out = (R * 952) >> 10;
-    const i32 bw = (g_out - g_in) >> 3;
+    // --- E1, SPEED: the dial steps to 33, 45 or 78 and the pitch fader carries the rest
+    {
+        const Detent d = detent_of(r[rec::SPEED]);
+        for (u32 k = 0; k < 3; ++k) {
+            const Pt p = {art::dial_x, art::dial_y};
+            if (k == d.index) put(frame, art::dial_33 + k, p);
+            else hide(frame, art::dial_33 + k);
+        }
+        // up the slot, toward the back of the deck, is faster
+        const i32 back = (art::cap_travel >> 10) * d.pitch;   // Q10 px along the depth axis
+        const Pt c = {art::cap_x + ((back * 14189) >> 14), art::cap_y - (back >> 1)};
+        put(frame, art::cap_left, c);
+        put(frame, art::cap_right, c);
+        put(frame, art::cap_top, c);
+        put(frame, art::cap_line, c);
+    }
+    // --- the model's pictogram, printed on the label (it stays put as the record turns)
+    for (u32 n = art::marks_first; n < art::marks_end; ++n) {
+        const Pt p = {art::mark_x, art::mark_y};
+        if (n >= art::mark_first[m] && n < static_cast<u32>(art::mark_first[m] + art::mark_count[m])) put(frame, n, p);
+        else hide(frame, n);
+    }
+
+    // the grooves' field and its eight bars, outermost first (Q8 radii)
+    const i32 bw = (art::g_out - art::g_in) >> 3;
     // E2, PICK: the picked bar, sliding across the eight bars (Q10, 0..7)
     const i32 c = (r[rec::PICK] * 7168) / 127;
-    const i32 bc = g_out - (((2 * c + 1024) * bw) >> 11);
+    const i32 bc = art::g_out - (((2 * c + 1024) * bw) >> 11);
 
     // --- the stylus over the picked bar: where the arm's circle about the pivot meets it
-    const i32 si = clampi(bc - art::stylus_lo, 0, (art::stylus_n - 1) * 16 - 1);
-    const i32 e = si >> 4, f = si & 15;
-    const i32 sx = art::stylus_x[e] + (((art::stylus_x[e + 1] - art::stylus_x[e]) * f) >> 4);
-    const i32 sy = art::stylus_y[e] + (((art::stylus_y[e + 1] - art::stylus_y[e]) * f) >> 4);
-    const i32 phi = art::stylus_phi[e] + (((art::stylus_phi[e + 1] - art::stylus_phi[e]) * f) >> 4);
+    const i32 si = clampi(bc - art::stylus_lo, 0, (art::stylus_n - 1) * 256 - 1);
+    const i32 e = si >> 8, f = si & 255;
+    const i32 sx = art::stylus_x[e] + (((art::stylus_x[e + 1] - art::stylus_x[e]) * f) >> 8);
+    const i32 sy = art::stylus_y[e] + (((art::stylus_y[e + 1] - art::stylus_y[e]) * f) >> 8);
+    const i32 phi = art::stylus_phi[e] + (((art::stylus_phi[e + 1] - art::stylus_phi[e]) * f) >> 8);
 
     Pt pts[64];
     // --- paths 0 and 1, E2: the groove, two walls a half-pitch apart spiralling
     // in 8 px a turn from the label to the outer edge, in two halves (the outer
-    // half path 0). WEAR makes each point wander by its own fixed amount; the
-    // record's turn carries them round.
+    // half path 0). WEAR makes each point wander by its own fixed amount, up
+    // to 1.25 px; the record's turn carries them round.
     {
-        const i32 U = (g_out - g_in - 64) * 512;   // the walls' length in turns (65536 a turn)
-        const i32 amp = (20 * t[rec::WEAR]) >> 10;   // up to 1.25 px
+        const i32 U = (art::g_out - art::g_in - 1024) * 32;   // the walls' length in turns (65536 a turn)
+        const i32 wear = t[rec::WEAR] * 320;
         for (u32 k = 0; k < 2; ++k) {
             const i32 ua = k ? 0 : U >> 1, ub = k ? U >> 1 : U;
             for (u32 i = 0; i < 32; ++i) {
                 const i32 u = ua + ((ub - ua) * static_cast<i32>(i)) / 31;
-                const i32 r1 = g_in + 64 + (u >> 9);
+                const i32 r1 = art::g_in + 1024 + (u >> 5);
                 const i32 a = u + rho;
-                pts[i] = ring(r1 + ((amp * art::wander[k][0][i]) >> 7), a);
-                pts[63 - i] = ring(r1 - 64 + ((amp * art::wander[k][1][i]) >> 7), a);
+                pts[i] = ring(r1 + ((wear * art::wander[k][0][i]) >> 17), a);
+                pts[63 - i] = ring(r1 - 1024 + ((wear * art::wander[k][1][i]) >> 17), a);
             }
             reshape(frame, k, pts, centre, groove_shade);
         }
@@ -330,8 +367,8 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
         const i32 lo = phi + 91, span = 65536 - 182;
         for (u32 i = 0; i < 32; ++i) {
             const i32 a = lo + (span * static_cast<i32>(i)) / 31;
-            pts[i] = ring(bc + 5, a);
-            pts[63 - i] = ring(bc - 5, a);
+            pts[i] = ring(bc + 80, a);
+            pts[63 - i] = ring(bc - 80, a);
         }
         reshape(frame, 2, pts, centre, bar_shade);
     }
@@ -339,8 +376,8 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     // early landing, behind it for a late one; it turns with the record
     {
         const i32 a = phi - (64 - r[rec::CUE]) * 171 + rho;
-        const Pt o = ring(R - 48, a);
-        Pt p = {centre.x + o.x, centre.y + o.y};
+        const Pt o = ring(art::r_record - 768, a);
+        const Pt p = {centre.x + o.x, centre.y + o.y};
         put(frame, art::sticker, p);
     }
 
@@ -351,18 +388,20 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
         const i32 ux = ((sx - art::pivot_x) * 16384) / art::arm, uy = ((sy - art::pivot_y) * 16384) / art::arm;   // Q14
         i32 nx = -uy, ny = ux;   // across the arm, toward the viewer
         if (nx + ny < 0) { nx = -nx; ny = -ny; }
-        const i32 warp = (64 * rec::warp_share(r[rec::WARP])) >> 16;   // the disc's rise at the stylus, up to 4 px (Q4)
-        const i32 rest = 24 + ((112 * (1024 - t[rec::LIFT])) >> 10) + ((warp * (16384 + cs(0))) >> 15);
+        // heights in Q10 px
+        const i32 warp = rec::warp_share(r[rec::WARP]) >> 4;   // the disc's rise at the stylus, up to 4 px
+        const i32 rest = 1536 + ((7168 * (1024 - t[rec::LIFT])) >> 10) + ((warp * (16384 + cs(0))) >> 15);
         const i32 ride = (warp * (16384 + cs(2 * rho))) >> 15;
-        const i32 h = rest + (((ride - rest) * down) >> 10);   // the needle's tip over the record (Q4)
-        const i32 zh = art::z_top + h + art::stylus + art::head_d;   // the arm's top at the head
-        // a point of the arm: a along it from the pivot, b across, d under its top (Q4)
+        const i32 h = rest + (((ride - rest) * down) >> 10);   // the needle's tip over the record
+        const i32 zh = (art::z_top + art::stylus + art::head_d) * 64 + h;   // the arm's top at the head
+        // a point of the arm: a along it from the pivot, b across (Q4), d under its top (Q4)
         struct Arm {
             i32 ux, uy, nx, ny, zh;
             Pt at(i32 a, i32 b, i32 d) const {
                 const i32 x = art::pivot_x + ((a * ux + b * nx) >> 14), y = art::pivot_y + ((a * uy + b * ny) >> 14);
-                const i32 z = (a > 0 ? art::pivot_z + ((zh - art::pivot_z) * a) / art::arm : art::pivot_z) - d;
-                return project(x, y, z);
+                const i32 pz = art::pivot_z * 64;
+                const i32 z = (a > 0 ? pz + ((zh - pz) * a) / art::arm : pz) - d * 64;
+                return lift(x, y, z);
             }
         } arm = {ux, uy, nx, ny, zh};
         // the corners: the far top edge from the tail to the head, across the
@@ -398,15 +437,16 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
         put(frame, art::head, hp, unit, by);
         put(frame, art::needle, hp);
         // E4, WEIGHT: the counterweight slides along the tail, nearer the pivot the heavier
-        const i32 w = 304 - ((176 * t[rec::WEIGHT]) >> 10);
-        const Pt cw = arm.at(-w, 0, 0);
+        const i32 w = 4864 - ((2816 * t[rec::WEIGHT]) >> 10);   // Q8: 19 px behind the pivot to 8
+        const i32 wx = (-w * ux) >> 14, wy = (-w * uy) >> 14;
+        const Pt pv = arm.at(0, 0, 0);
+        const Pt cw = {pv.x + (((wx - wy) * 14189) >> 12), pv.y + (wx + wy) * 2};
         put(frame, art::weight_side, cw);
         put(frame, art::weight_top, cw);
     }
     // --- E4 page 2, DRAG: the dust brush comes straight down its post onto the record
     {
-        Pt b = project(art::post_x, art::post_y, art::brush_z);
-        b.y += ((art::brush_drop * rec::drag_share(r[rec::DRAG])) >> 16) * 64;
+        const Pt b = {art::brush_x, art::brush_y + ((art::brush_drop * rec::drag_share(r[rec::DRAG])) >> 16)};
         put(frame, art::brush_side, b);
         put(frame, art::brush_arm, b);
         put(frame, art::brush_top, b);

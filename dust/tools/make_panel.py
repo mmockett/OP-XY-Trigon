@@ -6,22 +6,26 @@ changing anything here and commit both.
     python3 dust/tools/make_panel.py
 
 The screen is an isometric record deck in the stock look: a near-black
-plinth with hairline seams, a dark platter, the record (black with a light
-rim and edge), the tonearm on its pillar with its counterweight, and a dust
-brush on a post at the front left. One isometric projection for everything:
-30 degree edges, no vanishing point. World units are screen pixels: X runs
-down to the right, Y down to the left, Z up; the plinth's back corner is the
-origin.
+plinth with hairline seams, a dark platter, one record (black with a light
+rim and edge) with the selected model's pictogram printed on its label, the
+tonearm on its pillar with its counterweight, a dust brush on a post at the
+left, a speed dial at the front left and a pitch fader at the front right.
+One isometric projection for everything: 30 degree edges, no vanishing
+point. World units are screen pixels: X runs down to the right, Y down to
+the left, Z up; the plinth's back corner is the origin.
 
-The grey is the encoder's: the record and its cue sticker are encoder 1
-(hollow, a light outline on black), the grooves and the picked bar encoder
-2 (4B4B4B), the arm encoder 3 (969696), the counterweight and the dust brush
-encoder 4 (CDCDCD). The plinth, platter, pillar, spindle and posts never
+The grey is the encoder's: the record, its cue sticker, the speed dial and
+the pitch fader are encoder 1 (hollow, a light outline on black), the
+grooves and the picked bar encoder 2 (4B4B4B), the arm encoder 3 (969696),
+the counterweight and the dust brush encoder 4 (CDCDCD). The plinth,
+platter, record, pillar, spindle, dial body, fader slot and posts never
 move, so they are plain artwork. Everything a control or a hit moves is a
 bound node drawn around its own origin, or one of the four reshaping
 outlines display.cpp computes in the projection every frame: the groove's
-two halves, the picked bar and the arm. No path has more than one subpath
-or 64 points, and no outline turns sharper than SHARPEST. Pure Python.
+two halves, the picked bar and the arm. The dial's three pointers and the
+fifteen pictograms are nodes shown one at a time. Lines are thin closed
+ribbons; no path has more than one subpath or 64 points, and no outline
+turns sharper than SHARPEST. Pure Python.
 """
 import math
 import pathlib
@@ -43,35 +47,35 @@ def P(x, y, z=0.0):
 
 # ---------------------------------------------------------------- the deck
 W, D, H = 140.0, 112.0, 12.0              # the plinth
-RX, RY = 52.0, 56.0                       # the platter's and record's centre
+RX, RY = 54.0, 52.0                       # the platter's and record's centre
 R_PLATTER, PLATTER_H = 46.0, 3.0
 Z_REC = H + PLATTER_H                     # the record's underside
 REC_H = 3.0
 Z_TOP = Z_REC + REC_H                     # the record's playing surface
-R_BIG = 44.0                              # a 12-inch at 33; a 7-inch at 45 is 0.6 of it, a 10-inch at 78 0.85
-R_REF = 35.0                              # the record and its label are drawn at this size and scaled
-LABEL = 0.36                              # the label's radius, of the record's
-GROOVE_OUT = 0.93                         # the grooves' outer edge, of the record's
+R_REC = 40.0                              # one record, one size
+R_LABEL = 15.0
+G_IN, G_OUT = R_LABEL + 0.5, R_REC * 0.93 # the grooves' field
 PITCH = 8.0                               # the groove's two walls advance this much a turn: a line every 4 px
-PIVOT = (120.0, 22.0)                     # the tonearm's pillar
+PIVOT = (122.0, 20.0)                     # the tonearm's pillar
 Z_PIVOT = H + 17.0                        # the arm's top at the pivot
-ARM, TAIL = 70.0, 22.0                    # pivot to stylus; the counterweight's tail behind the pivot
+ARM, TAIL = 64.0, 22.0                    # pivot to stylus; the counterweight's tail behind the pivot
 ARM_W, ARM_T = 1.2, 0.8                   # the arm's width and depth: drawn as a thin outline stroked wide
 STYLUS = 4.4                              # the needle under the headshell
 HEAD_D = 1.6                              # the headshell's depth
 BRUSH_T = 1.6                             # the brush arm's depth
-POST = (12.0, 96.0)                       # the dust brush's post
-BRUSH_R = 21.0                            # the brush's head over the record, from its centre
+POST = (6.0, 44.0)                        # the dust brush's post, at the left edge
+BRUSH_ANGLE, BRUSH_LEN = -8.0, 30.0       # its arm's plan direction (degrees) and length to the head's centre
 BRUSH_DROP = 7.0                          # how far the brush is parked above the record
 HEAD_T = 2.5                              # the brush head's depth, bristles and all
 Z_BRUSH = Z_TOP + BRUSH_DROP + HEAD_T     # the brush arm's top, parked
-
-
-def record_radius(r):
-    """SPEED (0..127) to the record's radius, as display.cpp computes it (Q4 integers)."""
-    if r <= 64:
-        return 704 - ((r * 4506) >> 10)
-    return 422 + (((r - 64) * 2861) >> 10)
+DIAL, DIAL_R, DIAL_H = (18.0, 98.0), 7.5, 2.5          # the speed dial, front left
+DETENTS = ((33.3333, -175.0), (45.0, -115.0), (78.0, -55.0))   # rpm and the pointer's plan angle
+FADER_X, FADER_Y0, FADER_Y1 = 124.0, 62.0, 104.0       # the pitch fader's slot, along the depth axis
+CAP_TRAVEL = 15.0                         # the cap's travel either way of the slot's middle
+CAP_MID = (FADER_Y0 + FADER_Y1) / 2
+PRINT = (RX + 8.4 * math.cos(math.radians(125)), RY + 8.4 * math.sin(math.radians(125)))   # the pictogram, left of the spindle
+MARK_SCALE = 0.9                          # the marks are drawn about 11 plan units across: as much as the label holds
+PRINT_GREY, TICK_GREY, SCALE_GREY = "#7D7D7D", "#5A5A5A", "#4A4A4A"
 
 
 def stylus(rho):
@@ -86,7 +90,7 @@ def stylus(rho):
     return max(cand, key=lambda q: q[0] + q[1])
 
 
-STYLUS_LO, STYLUS_N = 8, 37   # the stylus table: radii 8, 9, .. 44
+STYLUS_LO, STYLUS_N = 14, 25   # the stylus table: radii 14, 15, .. 38
 
 
 def screen_angle(x, y):
@@ -141,7 +145,7 @@ def check(points):
         area += ax * by - bx * ay
     (ax, ay), (bx, by) = points[-1], points[0]
     assert math.hypot(bx - ax, by - ay) >= 0.25, "closing edge"
-    assert abs(area / 2) >= 1.0, f"area {area / 2:.2f}"
+    assert abs(area / 2) >= 0.5, f"area {area / 2:.2f}"   # a ribbon a fraction of a pixel wide has area enough
 
 
 def poly(points):
@@ -205,12 +209,39 @@ def bar(a, b, w):
     return [(ax + nx, ay + ny), (bx + nx, by + ny), (bx - nx, by - ny), (ax - nx, ay - ny)]
 
 
+def ribbon(points, w=0.6):
+    """A drawn line as a thin closed ribbon (plan points), w wide: out along one edge, back along the other."""
+    n, left, right = len(points), [], []
+    for i in range(n):
+        a, b = points[max(0, i - 1)], points[min(n - 1, i + 1)]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = math.hypot(dx, dy) or 1
+        left.append((points[i][0] - dy / length * w / 2, points[i][1] + dx / length * w / 2))
+        right.append((points[i][0] + dy / length * w / 2, points[i][1] - dx / length * w / 2))
+    loop = left + right[::-1]
+    k = max(1, n // 2)
+    return loop[k:] + loop[:k]   # start mid-edge, so the closing edge is a long one
+
+
+def flat(points, z, origin=(0.0, 0.0)):
+    """Plan points at height z on screen, about a screen origin."""
+    return [(x - origin[0], y - origin[1]) for x, y in (P(px, py, z) for px, py in points)]
+
+
 # ---------------------------------------------------------------- the static scene
-LAYERS = {"back": [], "middle": [], "pivot": [], "spindle": [], "post": []}
+LAYERS = {name: [] for name in ("back", "record", "label", "spindle", "middle", "pivot", "dial", "fader", "post")}
 
 
 def static(layer, points, fill="none", stroke="none", w=0.5):
     LAYERS[layer].append((poly(points), fill, stroke, w))
+
+
+def brush_frame():
+    """The brush's post, its head's centre and the arm's plan direction."""
+    bx, by = POST
+    a = math.radians(BRUSH_ANGLE)
+    ux, uy = math.cos(a), math.sin(a)
+    return (bx, by), (bx + ux * BRUSH_LEN, by + uy * BRUSH_LEN), (ux, uy)
 
 
 def scene():
@@ -223,6 +254,13 @@ def scene():
     static("back", top, G1, SEAM)
     # the platter, one dark solid
     static("back", cylinder_hull(RX, RY, H, PLATTER_H, R_PLATTER), "#323232")
+    # the record, encoder 1's hollow: black with a light rim and edge
+    static("record", cylinder_hull(RX, RY, Z_REC, REC_H, R_REC), "#000000", G4, 1.0)
+    static("record", ellipse(RX, RY, Z_TOP, R_REC, 64), "#000000", G4, 1.0)
+    static("label", ellipse(RX, RY, Z_TOP, R_LABEL, 48), "#000000", G4, 1.0)
+    # the spindle through the label
+    static("spindle", cylinder_hull(RX, RY, Z_TOP, 3.0, 1.3, 12), G3)
+    static("spindle", ellipse(RX, RY, Z_TOP + 3.0, 1.3, 16), G4)
     # the tonearm's pillar: a 4B4B4B base under a 7D7D7D column
     px, py = PIVOT
     static("middle", cylinder_hull(px, py, H, 3.0, 7.0), G2)
@@ -232,40 +270,105 @@ def scene():
     # the bearing's cap over the arm
     static("pivot", cylinder_hull(px, py, Z_PIVOT - 1.0, 2.4, 2.2, 16), G3, "#000000", 0.5)
     static("pivot", ellipse(px, py, Z_PIVOT + 1.4, 2.2, 20), G3, "#000000", 0.5)
-    # the spindle through the label
-    static("spindle", cylinder_hull(RX, RY, Z_TOP, 3.0, 1.4, 12), G3)
-    static("spindle", ellipse(RX, RY, Z_TOP + 3.0, 1.4, 16), G4)
+    # the speed dial: a short hollow cylinder, three printed ticks for its detents
+    dx, dy = DIAL
+    for _rpm, a in DETENTS:
+        c, s = math.cos(math.radians(a)), math.sin(math.radians(a))
+        static("dial", flat(ribbon([(dx + 9.5 * c, dy + 9.5 * s), (dx + 13 * c, dy + 13 * s)], 0.7), H), "none", TICK_GREY, 0.8)
+    static("dial", cylinder_hull(dx, dy, H, DIAL_H, DIAL_R, 30), "#000000", G4, 0.9)
+    static("dial", ellipse(dx, dy, H + DIAL_H, DIAL_R, 40), "#000000", G4, 0.9)
+    # the pitch fader: a sunk black slot along the depth axis, seven printed ticks beside it
+    x = FADER_X
+    static("fader", flat([(x - 1.6, FADER_Y0), (x + 1.6, FADER_Y0), (x + 1.6, FADER_Y1), (x - 1.6, FADER_Y1)], H), "#000000", SEAM, 0.5)
+    for k in range(7):
+        y = FADER_Y0 + 3 + (FADER_Y1 - FADER_Y0 - 6) * k / 6
+        w = 3.5 if k == 3 else 2.0
+        static("fader", flat(ribbon([(x + 4, y), (x + 4 + w, y)], 0.6), H), "none", SCALE_GREY, 0.8)
     # the dust brush's post: the brush slides down it
     bx, by = POST
     static("post", cylinder_hull(bx, by, H, Z_BRUSH - BRUSH_T - H, 2.4, 20), G2)
     static("post", ellipse(bx, by, Z_BRUSH - BRUSH_T, 2.4, 20), SEAM)
 
 
+# ---------------------------------------------------------------- the pictograms
+# Each model's mark, printed flat on the label in #7D7D7D: plan units about PRINT,
+# u along X, v along Y (the print's up is -v). Each entry is one outline: a closed
+# shape, or a drawn line as a thin ribbon.
+def circle(cu, cv, r, n=28):
+    return ("shape", [(cu + r * math.cos(2 * math.pi * i / n), cv + r * math.sin(2 * math.pi * i / n)) for i in range(n)])
+
+
+def oval(cu, cv, ru, rv, n=28):
+    return ("shape", [(cu + ru * math.cos(2 * math.pi * i / n), cv + rv * math.sin(2 * math.pi * i / n)) for i in range(n)])
+
+
+def shape(*pts):
+    return ("shape", list(pts))
+
+
+def stroke(*pts):
+    return ("line", list(pts))
+
+
+def capsule(u0, u1, r, n=10):
+    pts = [(u1 + r * math.cos(-math.pi / 2 + math.pi * i / n), r * math.sin(-math.pi / 2 + math.pi * i / n)) for i in range(n + 1)]
+    pts += [(u0 + r * math.cos(math.pi / 2 + math.pi * i / n), r * math.sin(math.pi / 2 + math.pi * i / n)) for i in range(n + 1)]
+    return ("shape", pts)
+
+
+MODELS = ["kick", "snare", "rim", "hat", "open", "ride", "crash", "tom", "conga", "bongo", "tamb", "bell", "clap", "shake", "bass"]
+MARKS = {
+    "kick": [circle(0, 0, 5.5), circle(0, 0, 2.6)],                                   # a drum head
+    "snare": [shape((-6, -3), (6, -3), (6, 3), (-6, 3)),                             # a drum side on, its wires crossed
+              stroke((-5, -1.5), (5, 1.5)), stroke((-5, 1.5), (5, -1.5))],
+    "rim": [circle(0, 0.5, 5.5), stroke((1.2, -6.2), (6.4, -1.8))],                   # a drum head, a stick across its edge
+    "hat": [shape((-6, -2.2), (6, -2.2), (6, -1.0), (-6, -1.0)),                     # two cymbals closed, on the stand
+            stroke((0, -1.0), (0, 5))],
+    "open": [stroke((-6, -4.4), (6, -4.4)), stroke((-6, -1.0), (6, -1.0)),            # held apart, on the stand
+             stroke((0, -4.4), (0, 5))],
+    "ride": [stroke((-6.5, 0.5), (6.5, 0.5)), circle(0, -1.1, 1.1, 14)],              # one long cymbal, the bell above
+    "crash": [stroke((5, 2.5), (-4, -1.5)),                                           # tilted, spray off its high end
+              stroke((-4.7, -2.4), (-5.9, -4.6)), stroke((-5.2, -1.6), (-7.2, -2.6)), stroke((-5.0, -0.6), (-7.0, -0.2))],
+    "tom": [shape((-5, -4), (5, -4), (5, 4), (-5, 4))],                               # a deeper drum side on
+    "conga": [shape((-3.2, -6), (3.2, -6), (1.8, 6), (-1.8, 6))],                     # a tall barrel, narrow at the foot
+    "bongo": [circle(-3, 0, 3, 22), circle(3, 0, 3, 22)],                             # two small heads touching
+    "tamb": [circle(0, 0, 5)] + [circle(5 * math.cos(a), 5 * math.sin(a), 1.0, 12)   # a ring with four jingles
+                                 for a in (math.pi / 4, 3 * math.pi / 4, 5 * math.pi / 4, 7 * math.pi / 4)],
+    "bell": [shape((-2.5, -4), (2.5, -4), (5, 4), (-5, 4)), stroke((0, 1.5), (0, 6))],   # wide at the mouth, a clapper
+    "clap": [oval(-1.8, 0, 3, 5), oval(1.8, 0, 3, 5)],                               # two palms overlapping
+    "shake": [capsule(-3.5, 3.5, 2.6)] + [circle(u, 0, 0.8, 10) for u in (-3, 0, 3)],   # a capsule, three beads
+    "bass": [stroke(*[(u, 1.7 * math.sin(u * 0.785)) for u in [-6 + 12 * i / 24 for i in range(25)]])],   # a string, a wave and a half
+}
+
+
+def mark_outline(kind, pts):
+    """A mark's outline in plan, about PRINT."""
+    pts = [(u * MARK_SCALE, v * MARK_SCALE) for u, v in pts]
+    return pts if kind == "shape" else ribbon(pts, 0.6)
+
+
 # ---------------------------------------------------------------- bound parts
 NODES = []   # (name, points, fill, stroke, width)
 
 
-def node(name, points, fill="none", stroke=G4, w=1.0):
-    NODES.append((name, points, fill, stroke, w))
+def node(name, points, fill="none", stroke_=G4, w=1.0):
+    NODES.append((name, points, fill, stroke_, w))
 
 
-def brush_frame():
-    """The brush's arm and head in plan, and its origin on screen (the arm's root, parked)."""
-    bx, by = POST
-    ux, uy = RX - bx, RY - by
-    L = math.hypot(ux, uy)
-    ux, uy = ux / L, uy / L
-    hx, hy = RX - ux * BRUSH_R, RY - uy * BRUSH_R          # the head's centre
-    return (bx, by), (hx, hy), (ux, uy)
+CAP = []     # the fader cap's nodes, drawn about its middle
 
 
 def parts():
     o = P(RX, RY, Z_TOP)
-    # the record at R_REF: its edge (black, a light rim) and its top; its label (all scaled by SPEED)
-    rec = [(x - o[0], y - o[1]) for x, y in cylinder_hull(RX, RY, Z_TOP - REC_H, REC_H, R_REF)]
-    node("record_edge", rec, "#000000", G4, 1.0)
-    node("record_top", [(x - o[0], y - o[1]) for x, y in ellipse(RX, RY, Z_TOP, R_REF, 64)], "#000000", G4, 1.0)
-    node("label", [(x - o[0], y - o[1]) for x, y in ellipse(RX, RY, Z_TOP, R_REF * LABEL, 48)], "#000000", G4, 1.0)
+    # the model's pictogram on the label: every model's, one shown at a time
+    po = P(PRINT[0], PRINT[1], Z_TOP)
+    for m in MODELS:
+        for k, (kind, pts) in enumerate(MARKS[m]):
+            plan = [(PRINT[0] + u, PRINT[1] + v) for u, v in mark_outline(kind, pts)]
+            for x, y in plan:   # on the label, clear of the spindle
+                d = math.hypot(x - RX, y - RY)
+                assert 2.3 <= d <= R_LABEL - 0.9, (m, k, round(d, 2))
+            node(f"mark_{m}_{k}", flat(plan, Z_TOP, po), "none", PRINT_GREY, 0.8)
     # CUE's sticker on the rim, hollow
     node("sticker", [(x - o[0], y - o[1]) for x, y in ellipse(RX, RY, Z_TOP, 3.2, 24)], "#000000", G4, 0.9)
     # WEIGHT's counterweight: a CDCDCD cylinder on the tail, its origin on the tail's top
@@ -277,6 +380,22 @@ def parts():
     corners = [(a * u[0] + b * n[0], a * u[1] + b * n[1]) for a, b in ((-2, -2.5), (5, -2.5), (5, 2.5), (-2, 2.5))]
     node("head", prism(corners, HEAD_D, HEAD_D, P(0, 0, 0)), G3, "#000000", 0.5)
     node("needle", [(-0.5, 0.0), (0.5, 0.0), (0.5, STYLUS), (-0.5, STYLUS)], G3, G3, 0.3)
+    # SPEED's dial pointer, one for each detent, about the dial's top centre
+    dx, dy = DIAL
+    do = P(dx, dy, H + DIAL_H)
+    for rpm, a in DETENTS:
+        c, s = math.cos(math.radians(a)), math.sin(math.radians(a))
+        node(f"dial_{int(rpm)}", flat(ribbon([(dx, dy), (dx + DIAL_R * 0.85 * c, dy + DIAL_R * 0.85 * s)], 0.9), H + DIAL_H, do),
+             "none", G4, 1.1)
+    # SPEED's pitch-fader cap: a raised hollow box in the slot, a hairline across its top
+    co = P(FADER_X, CAP_MID, H)
+    x0, x1, y0, y1, zt = FADER_X - 4, FADER_X + 4, CAP_MID - 5, CAP_MID + 5, H + 3.5
+    def face(*pts):
+        return [(x - co[0], y - co[1]) for x, y in (P(*q) for q in pts)]
+    node("cap_left", face((x0, y1, zt), (x1, y1, zt), (x1, y1, H), (x0, y1, H)), "#000000", G4, 0.8)
+    node("cap_right", face((x1, y0, zt), (x1, y1, zt), (x1, y1, H), (x1, y0, H)), "#000000", G4, 0.8)
+    node("cap_top", flat([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], zt, co), "#000000", G4, 0.8)
+    node("cap_line", flat(ribbon([(x0 + 0.6, CAP_MID), (x1 - 0.6, CAP_MID)], 0.4), zt, co), "none", G4, 0.6)
     # DRAG's dust brush: its head (bristles and all) under the arm and the head's top, CDCDCD,
     # drawn about the arm's root at the post, parked
     (bx, by), (hx, hy), (ux, uy) = brush_frame()
@@ -288,8 +407,9 @@ def parts():
 
 
 # the drawing order, back to front
-ORDER = ["back", "record_edge", "record_top", "path:0", "path:1", "path:2", "label", "spindle", "sticker",
+ORDER = ["back", "record", "path:0", "path:1", "path:2", "label", "mark_*", "spindle", "sticker",
          "middle", "path:3", "weight_side", "weight_top", "pivot", "head", "needle",
+         "dial", "dial_*", "fader", "cap_left", "cap_right", "cap_top", "cap_line",
          "post", "brush_side", "brush_arm", "brush_top"]
 
 
@@ -314,6 +434,14 @@ def q4(v):
     return int(round(v * 16))
 
 
+def q8(v):
+    return int(round(v * 256))
+
+
+def q10(v):
+    return int(round(v * 1024))
+
+
 def build():
     scene()
     parts()
@@ -336,21 +464,28 @@ def build():
     index = {name: PATHS + n_header + k for k, (name, *_rest) in enumerate(NODES)}
     by_name = {n[0]: n for n in NODES}
     emitted = set()
+
+    def emit(name):
+        _n, points, fill, stroke_, w = by_name[name]
+        emitted.add(name)
+        lines.append(f'<path id="{ID}_node_{index[name]}" transform="matrix(1 0 0 1 640 320)" d="{poly(points)}" '
+                     f'fill="{fill}" stroke="{stroke_}" stroke-width="{fmt(w)}"/>')
     for item in ORDER:
         if item in LAYERS:
-            for d, fill, stroke, w in LAYERS[item]:
-                lines.append(f'<path d="{d}" fill="{fill}" stroke="{stroke}" stroke-width="{fmt(w)}"/>')
+            for d, fill, stroke_, w in LAYERS[item]:
+                lines.append(f'<path d="{d}" fill="{fill}" stroke="{stroke_}" stroke-width="{fmt(w)}"/>')
         elif item.startswith("path:"):
             p = int(item[5:])
             # the reshaping outlines, unfilled, authored as distinct points round an ellipse
             pts = [(30 * math.cos(2 * math.pi * i / POINTS), 20 * math.sin(2 * math.pi * i / POINTS)) for i in range(POINTS)]
             col, w = PALETTE[PATH_SHADE[p]]
             lines.append(f'<path id="{ID}_node_{p}" d="{poly(pts)}" fill="none" stroke="{col}" stroke-width="{fmt(w)}"/>')
+        elif item.endswith("*"):
+            for name, *_r in NODES:
+                if name.startswith(item[:-1]):
+                    emit(name)
         else:
-            _n, points, fill, stroke, w = by_name[item]
-            emitted.add(item)
-            lines.append(f'<path id="{ID}_node_{index[item]}" transform="matrix(1 0 0 1 640 320)" d="{poly(points)}" '
-                         f'fill="{fill}" stroke="{stroke}" stroke-width="{fmt(w)}"/>')
+            emit(item)
     assert emitted == set(by_name), set(by_name) - emitted
     for i, (col, w) in enumerate(PALETTE):
         lines.append(f'<circle id="{ID}_palette_{i}" cx="640" cy="0" r="1" fill="{col}" stroke="{col}" stroke-width="{fmt(w)}"/>')
@@ -359,45 +494,59 @@ def build():
     assert len(text) < 64 * 1024, len(text)
     (ROOT / "panel.svg.fragment").write_text(text)
 
-    # art.h: the projection and the geometry in Q4 (16 a pixel), angles 65536 a turn
+    # art.h: the projection and the geometry; plan in Q4 (16 a pixel), radii in Q8, screen in Q10
     names = sorted(index.items(), key=lambda kv: kv[1])
     tab = [stylus(STYLUS_LO + i) for i in range(STYLUS_N)]
     phis = [math.atan2(sy - RY, sx - RX) + math.pi / 4 for sx, sy in tab]
     turns = [int(round(a / (2 * math.pi) * 65536)) for a in phis]
     assert all(abs(t - turns[0]) < 16384 for t in turns), turns
-    (bx, by), (hx, hy), _u = brush_frame()
+    (bx, by), _h, _u = brush_frame()
     ref = screen_angle(*U_REF)
     nz = noise()
+    centre, mark, dial, cap, brush = P(RX, RY, Z_TOP), P(*PRINT, Z_TOP), P(*DIAL, H + DIAL_H), P(FADER_X, CAP_MID, H), P(bx, by, Z_BRUSH)
+    first = [index[f"mark_{m}_0"] for m in MODELS]
+    count = [len(MARKS[m]) for m in MODELS]
     head = ["#pragma once", "// Generated by tools/make_panel.py: the artwork's node numbers, the projection and the deck's geometry.",
             "#include <opxy/types.hpp>", "", "namespace dust {", "namespace art {",
             "using opxy::i32;",
             f"const opxy::u32 header_node = {first_header};",
             f"const opxy::u32 node_count = {bound};",
             "// screen (Q10 px) = (ox + (x - y) cos 30, oy + (x + y) / 2 - z) for world x y z in Q4 (16 a px)",
-            f"const i32 ox = {int(round(OX * 1024))}, oy = {int(round(OY * 1024))};",
-            "// the deck, Q4",
-            f"const i32 rx = {q4(RX)}, ry = {q4(RY)}, z_top = {q4(Z_TOP)};",
-            f"const i32 r_ref = {q4(R_REF)};   // the record node's radius as drawn",
+            f"const i32 ox = {q10(OX)}, oy = {q10(OY)};",
+            "// the parts' origins on screen, Q10: the record's centre on its surface, the label's print,",
+            "// the dial's top, the fader cap at its middle, the brush arm's root parked",
+            f"const i32 centre_x = {q10(centre[0])}, centre_y = {q10(centre[1])};",
+            f"const i32 mark_x = {q10(mark[0])}, mark_y = {q10(mark[1])};",
+            f"const i32 dial_x = {q10(dial[0])}, dial_y = {q10(dial[1])};",
+            f"const i32 cap_x = {q10(cap[0])}, cap_y = {q10(cap[1])}, cap_travel = {q10(CAP_TRAVEL)};",
+            f"const i32 brush_x = {q10(brush[0])}, brush_y = {q10(brush[1])}, brush_drop = {q10(BRUSH_DROP)};",
+            "// the record and its grooves' field, Q8 radii",
+            f"const i32 r_record = {q8(R_REC)}, g_in = {q8(G_IN)}, g_out = {q8(G_OUT)};",
+            "// the arm, Q4",
+            f"const i32 z_top = {q4(Z_TOP)};",
             f"const i32 pivot_x = {q4(PIVOT[0])}, pivot_y = {q4(PIVOT[1])}, pivot_z = {q4(Z_PIVOT)};",
             f"const i32 arm = {q4(ARM)}, tail = {q4(TAIL)}, arm_w = {q4(ARM_W)}, arm_t = {q4(ARM_T)}, head_d = {q4(HEAD_D)}, stylus = {q4(STYLUS)};",
-            f"const i32 post_x = {q4(bx)}, post_y = {q4(by)}, brush_z = {q4(Z_BRUSH)}, brush_drop = {q4(BRUSH_DROP)};",
-            "// the stylus over the record at radii 8, 9, .. 44 px: its plan position (Q4) and its angle",
+            f"// the stylus over the record at radii {STYLUS_LO}, {STYLUS_LO + 1}, .. {STYLUS_LO + STYLUS_N - 1} px: its plan position (Q4) and its angle",
             "// about the spindle on screen (65536 a turn, 0 screen right, clockwise)",
-            f"const i32 stylus_lo = {q4(STYLUS_LO)}, stylus_n = {STYLUS_N};",
+            f"const i32 stylus_lo = {q8(STYLUS_LO)}, stylus_n = {STYLUS_N};",
             "const i32 stylus_x[" + str(STYLUS_N) + "] = {" + ", ".join(str(q4(x)) for x, _y in tab) + "};",
             "const i32 stylus_y[" + str(STYLUS_N) + "] = {" + ", ".join(str(q4(y)) for _x, y in tab) + "};",
             "const i32 stylus_phi[" + str(STYLUS_N) + "] = {" + ", ".join(str(t) for t in turns) + "};",
             "// the headshell's direction on screen as drawn, Q10",
-            f"const i32 head_cos = {int(round(math.cos(ref) * 1024))}, head_sin = {int(round(math.sin(ref) * 1024))};",
+            f"const i32 head_cos = {q10(math.cos(ref))}, head_sin = {q10(math.sin(ref))};",
             "// WEAR's fixed wander of each groove point: [half][wall][point], -127..127",
             "const signed char wander[2][2][32] = {" + ", ".join(
                 "{" + ", ".join("{" + ", ".join(str(v) for v in wall) + "}" for wall in half) + "}" for half in nz) + "};",
+            "// each model's pictogram: its first node and how many",
+            f"const opxy::u32 marks_first = {first[0]}, marks_end = {first[-1] + count[-1]};",
+            "const opxy::u8 mark_first[15] = {" + ", ".join(str(v) for v in first) + "};",
+            "const opxy::u8 mark_count[15] = {" + ", ".join(str(v) for v in count) + "};",
             "enum Node : opxy::u32 {"]
     head += [f"    {name} = {idx}," for name, idx in names]
     head += ["};", "}", "}", ""]
     (ROOT / "art.h").write_text("\n".join(head))
     n_static = sum(len(v) for v in LAYERS.values())
-    print(f"wrote panel.svg.fragment ({len(text)} bytes) and art.h: {bound} nodes, {n_static} static paths")
+    print(f"wrote panel.svg.fragment ({len(text)} bytes) and art.h: {bound} nodes ({sum(count)} for the pictograms), {n_static} static paths")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # DUST
 
-![DUST's screen: an isometric record deck on a near-black plinth, a black 7-inch with a light rim on a dark platter, its grooves and a band for the picked bar, the tonearm across it from its pillar at the right with a light counterweight on its tail, a dust brush on a post at the left](docs/screen.png)
+![DUST's screen: an isometric record deck on a near-black plinth, a black record with a light rim on a dark platter, the playing model's pictogram printed on its label, its grooves and a band for the picked bar, the tonearm across it from its pillar at the right with a light counterweight on its tail, a dust brush on a post at the left, a speed dial at the front left and a pitch fader at the front right](docs/screen.png)
 
 A soul 45 on a portable record player, played as a drum kit. Every key is a
 hit from the break in the middle of the record: a felt-beaten kick, a snare
@@ -211,11 +211,16 @@ over the last quarter under the ceiling keeps every sample under it.
 
 A record deck in isometric, drawn the way the OP-XY draws its own screens:
 a near-black plinth with hairline seams, a dark platter, and on it the
-record, the tonearm on its pillar and a dust brush on its post. Each encoder
-owns one part of the deck in its own grey, on both pages, and the parts mean
-the same on every key: the record is encoder 1, drawn hollow with a light
-rim; its grooves are encoder 2, in dark grey; the arm is encoder 3, in mid
-grey; the counterweight and the dust brush are encoder 4, in light grey.
+record, the tonearm on its pillar and a dust brush on its post, with a speed
+dial and a pitch fader set into the plinth. Each encoder owns its parts of
+the deck in its own grey, on both pages, and the parts mean the same on
+every key: the record, the dial and the fader are encoder 1, drawn hollow
+with a light edge; the grooves are encoder 2, in dark grey; the arm is
+encoder 3, in mid grey; the counterweight and the dust brush are encoder 4,
+in light grey. The record's label carries a small printed pictogram of the
+key's model: a drum head for the kick, a snare with its wires, a pair of
+hats closed or open, a ride with its bell, a conga, a cowbell, two palms
+for the clap, a string for the bass.
 
 Play a key and the needle drops, the record spins at its speed with the cue
 sticker riding round, and it glides to rest as the hit ends, back at its
@@ -224,7 +229,7 @@ each control moves:
 
 | Control | On screen |
 | --- | --- |
-| SPEED | The record: a 12-inch at 33, a 7-inch at 45, a 10-inch at 78, and how fast it spins. |
+| SPEED | The dial clicks to 33, 45 or 78, whichever is nearest, and the pitch fader carries the rest, up the slot for faster; the record spins at that speed. |
 | PICK | The picked bar, a solid band in the grooves, from the rim at bar 1 to the label at bar 8; the arm swings to follow it. |
 | LIFT | How high the head waits over the record: the sooner it lifts, the higher. |
 | WEIGHT | The counterweight slides along the arm's tail, nearer the pillar for a heavier arm. |
@@ -235,7 +240,7 @@ each control moves:
 | TUNE (pad) | How fast the record spins. |
 
 Only the selected key's hits move it, an idle screen changes nothing, and
-reduced motion keeps it still. While notes sound it changes 4.3 nodes a frame on average while a hit moves, 6.7 at its busiest setting and 7 in its busiest frame; at rest, none.
+reduced motion keeps it still. While notes sound it changes 4.3 nodes a frame on average while a hit moves, 6.8 at its busiest setting and 7 in its busiest frame; at rest, none.
 
 ## CPU
 
