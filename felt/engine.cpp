@@ -168,6 +168,7 @@ inline void begin(Voice& voice, Shared& shared, opxy::Parameters parameters) {
     voice.tune = tune;
     voice.soft = soft;
     voice.seed = (++shared.notes) * 2654435761u + owner * 40503u;
+    if (!voice.seed) voice.seed = 0x9e3779b9u;
     i32 c[8];
     for (u32 i = 0; i < 8; ++i) c[i] = unit7(parameters[i]);
     setup_model(voice, model, c, tune);

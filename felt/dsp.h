@@ -108,8 +108,10 @@ inline i32 sin_inc(u32 inc) {
 
 // ------------------------------------------------------------ noise
 // xorshift: shifts and exclusive-ors only. The state is never zero.
+// (a seed of 0 starts as 0x9e3779b9: the voice's seed is set so where it is
+// made, so the generator never meets 0 and needs no test)
 inline u32 lcg(u32& s) {
-    u32 x = s ? s : 0x9e3779b9u;
+    u32 x = s;
     x ^= x << 13;
     x ^= x >> 17;
     x ^= x << 5;
