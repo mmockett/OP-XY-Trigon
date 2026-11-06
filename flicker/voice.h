@@ -82,7 +82,7 @@ struct Voice {
 // (no branches: the bend is worked out over the knee and chosen by selects)
 inline i32 ink_cut(i32 x, const Cut& c) {
     const i32 y = multiply(x, c.ink);   // x times ink / 8: the edge at 2^25
-    const i32 a = absolute(y);
+    const i32 a = magnitude(y);
     const i32 d = a - c.knee;
     const i32 dd = clamp(d, 0, c.span);
     const i32 bent = c.knee + dd - multiply(multiply(dd * 32, dd * 32), c.curve);

@@ -37,16 +37,13 @@ inline i32 imin(i32 a, i32 b) { return a < b ? a : b; }
 inline i32 imax(i32 a, i32 b) { return a > b ? a : b; }
 // (lo <= hi; as MIN and MAX, never a branch)
 inline i32 clamp(i32 v, i32 lo, i32 hi) { return imax(imin(v, hi), lo); }
-// |v|, the most negative value held at one: the Blackfin's ABS, which
-// saturates so, and the same on the host.
-inline i32 absolute(i32 v) {
-#if defined(__bfin__)
-    i32 a;
-    __asm__("%0 = ABS %1;" : "=d"(a) : "d"(v) : "ASTAT");
-    return a;
-#else
-    return v < 0 ? (v == -one - 1 ? one : -v) : v;
-#endif
+inline i32 absolute(i32 v) { return v < 0 ? (v == -one - 1 ? one : -v) : v; }
+// The same without a branch: |v| by its sign's mask, the most negative
+// value held at one.
+inline i32 magnitude(i32 v) {
+    const u32 s = static_cast<u32>(v >> 31);
+    const u32 u = (static_cast<u32>(v) ^ s) - s;
+    return static_cast<i32>(u - (u >> 31));
 }
 // a + (b - a) t for a Q16 unit t, |a|, |b| < 2^30.
 inline i32 mix(i32 a, i32 b, i32 t) { return a + multiply(b - a, clamp(t, 0, 65535) * 32768); }
