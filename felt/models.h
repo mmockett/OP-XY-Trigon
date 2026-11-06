@@ -812,9 +812,14 @@ inline void block_model(Voice& v, i32* out) {
             env_end = 0;
             v.waiting = 0;
         }
-        stage_bow(v, v.benv, (env_end - v.benv) / static_cast<i32>(frames), x);
+        if (v.benv || env_end) {
+            stage_bow(v, v.benv, (env_end - v.benv) / static_cast<i32>(frames), x);
+            run_modes(v, x, out);
+        } else {
+            // the thread let go: the string rings free, and its modes stop as they die
+            run_modes(v, nullptr, out);
+        }
         v.benv = env_end;
-        run_modes(v, x, out);
         break;
     }
     default: {   // THUD, TOM, TACK
