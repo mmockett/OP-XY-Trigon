@@ -29,7 +29,7 @@ build() {
         rm -rf "$WORK/fw-$t"
         (cd "$SDK" && python sdk.py compile --machine "$WORK/src-$t/$KIT" --out "$WORK/fw-$t" > "$WORK/fw-$t.log" 2>&1) ||
             { cat "$WORK/fw-$t.log"; exit 1; }
-        "$OBJDUMP" -d -r -C "$WORK/fw-$t/analysis/$KIT/voice.o" > "$stem.lst"
+        "$OBJDUMP" -d -r -C "$WORK/fw-$t/$KIT/voice.o" > "$stem.lst"
         sh "$ROOT/tools/perf/sim.sh" "$WORK/src-$t/$KIT" "$SDK" "$stem.elf"
         start=$(date +%s)
         perl -e 'alarm 2400; exec @ARGV' "$RUN" "$stem.elf" > "$stem.counts.part"
