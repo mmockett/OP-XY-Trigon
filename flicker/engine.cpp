@@ -288,19 +288,27 @@ FLICKER_APART void inked(Voice& voice, i32* x) {
     }
     for (unsigned i = 0; i < frames; ++i) x[i] = ink_cut(x[i], ink);
 }
-// The light through the slit and the lens (flickering, by FLUTTER), the
+// The light through the slit and the lens (flickering, by FLUTTER: Am), the
 // valve, the coupling capacitor and the model's gain; returns the block's
-// loudest sample (or'd), to tell whether the note still sounds.
-FLICKER_APART i32 projected(Voice& voice, i32* x, i32* output) {
+// loudest sample (or'd), to tell whether the note still sounds. With Ink,
+// INK's cut (and a thin ink's soft edge, Bleed) comes first in the same pass.
+template <bool Ink, bool Bleed, bool Am> inline i32 project(Voice& voice, i32* x, i32* output) {
+    const Cut ink = voice.cut;
+    const i32 bk = voice.bleed, am = voice.am;
     const i32 sk = voice.slit_k, lk = voice.lens_k, ck = voice.cap_k, gain = voice.gain, valve = voice.valve;
-    i32 s1 = voice.slit_s, s2 = voice.lens_s, cap = voice.cap_s;
+    i32 b = voice.bleed_s, s1 = voice.slit_s, s2 = voice.lens_s, cap = voice.cap_s;
     i32 most = 0;
-    if (voice.am_k) {
-        const i32 am = voice.am;
-        for (unsigned i = 0; i < frames; ++i) x[i] = multiply(x[i], am);
-    }
     for (unsigned i = 0; i < frames; ++i) {
-        s1 += multiply(x[i] - s1, sk);
+        i32 v = x[i];
+        if (Ink) {
+            if (Bleed) {
+                b += multiply(v - b, bk);
+                v = b;
+            }
+            v = ink_cut(v, ink);
+        }
+        if (Am) v = multiply(v, am);
+        s1 += multiply(v - s1, sk);
         s2 += multiply(s1 - s2, lk);
         const i32 w = s2 + multiply(multiply(s2, s2), valve) * 2;   // the valve: x + a x^2 (in track edges), a up to 0.25
         cap += multiply(w - cap, ck);
@@ -308,10 +316,25 @@ FLICKER_APART i32 projected(Voice& voice, i32* x, i32* output) {
         output[i] = y;
         most |= y < 0 ? -y : y;
     }
+    if (Bleed) voice.bleed_s = b;
     voice.slit_s = s1;
     voice.lens_s = s2;
     voice.cap_s = cap;
     return most;
+}
+template <bool Ink, bool Bleed> inline i32 project_am(Voice& voice, i32* x, i32* output) {
+    return voice.am_k ? project<Ink, Bleed, true>(voice, x, output) : project<Ink, Bleed, false>(voice, x, output);
+}
+// The film after the drawing: inked, then its dirt (DUST, which the ink
+// does not cut), then projected. Without dust, the ink and the projection
+// share a pass.
+FLICKER_APART i32 projected(Voice& voice, i32* x, i32* output) {
+    if (voice.dust) {
+        inked(voice, x);
+        dust(voice, x);
+        return project_am<false, false>(voice, x, output);
+    }
+    return voice.bleed ? project_am<true, true>(voice, x, output) : project_am<true, false>(voice, x, output);
 }
 // The soft knee over a block.
 FLICKER_APART void kneed(i32* output) {
@@ -327,10 +350,8 @@ inline void render(Voice& voice, Shared& shared, u32, opxy::Output output, opxy:
     flutter(voice);
     i32 x[frames];
     block_model(voice, x);
-    inked(voice, x);
-    if (voice.dust) dust(voice, x);
-    voice.t += frames;
     const i32 most = projected(voice, x, output);
+    voice.t += frames;
     if (levels::limit[voice.model] && (most > limit_top || voice.lim != one)) limit(voice, output);   // level: limiter
     // (tools/calibrate.py builds a copy without the lines marked "level:", to
     // measure the peaks the cap, the limiter and the knee take)
