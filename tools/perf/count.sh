@@ -31,6 +31,13 @@ build() {
             { cat "$WORK/fw-$t.log"; exit 1; }
         "$OBJDUMP" -d -r -C "$WORK/fw-$t/$KIT/voice.o" > "$stem.lst"
         sh "$ROOT/tools/perf/sim.sh" "$WORK/src-$t/$KIT" "$SDK" "$stem.elf"
+        if [ ! -f "$WORK/quick.done" ]; then
+            SIM_DEFS=-DSIM_QUICK sh "$ROOT/tools/perf/sim.sh" "$WORK/src-$t/$KIT" "$SDK" "$WORK/quick.elf"
+            start=$(date +%s)
+            perl -e 'alarm 300; exec @ARGV' "$RUN" "$WORK/quick.elf" && echo "the simulator ran the quick check in $(( $(date +%s) - start )) s" >&2 ||
+                { echo "the simulator failed the quick check ($?)" >&2; exit 1; }
+            touch "$WORK/quick.done"
+        fi
         start=$(date +%s)
         perl -e 'alarm 2400; exec @ARGV' "$RUN" "$stem.elf" > "$stem.counts.part"
         echo "counted $KIT at $(git rev-parse --short "$1") in $(( $(date +%s) - start )) s" >&2

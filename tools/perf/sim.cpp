@@ -61,6 +61,16 @@ struct Counter {
 
 int main() {
     opxy::u32 heavy_model = 0, heavy_level = 0, most = 0;
+#ifdef SIM_QUICK
+    // a check that the simulator runs this at all: one voice, ten blocks
+    put("quick\n");
+    Counter q = {0, 0, 0, 0, 0};
+    bench::run(1, 0, 0, q, 10);
+    put("ten blocks of one voice: ");
+    put(q.total_low);
+    put(" cycles\n");
+    return 0;
+#endif
     for (opxy::u32 index = 0; index < bench::kRuns; ++index) {
         Counter c = {0, 0, 0, 0, 0};
         const bool one = index >= 1 && index <= bench::kSingle;
