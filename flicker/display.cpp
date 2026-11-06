@@ -1,13 +1,16 @@
 #include "display.h"
 #include "ranges.h"
 
-// FLICKER's screen: a strip of 16 mm sound film running right to left
-// through a projector's sound head, seen face on. Its soundtrack carries the
+// FLICKER's screen: a strip of 16 mm sound film lying on a near-black slat,
+// isometric, four frames of it on the slat. Its soundtrack carries the
 // selected key's sound drawn as a bilateral variable-area shape, the same
-// drawing in every frame; the four drawings in the gate's window are the
-// reshaping paths. A note pulls one frame through the gate over the hit's own
-// length, so the drawing passes under the slit and the next frame's identical
-// drawing takes its place; the sprocket rollers turn with the film.
+// drawing in every frame, laid along the track in hairlines; the four
+// drawings are the reshaping paths. A note pulls the film one frame along
+// over the hit's own length, under a small gate whose slit lights the track,
+// so the next frame's identical drawing takes the place of the last. The grey
+// is the encoder's: the drawing CDCDCD (PITCH, and the model's own control on
+// page 2), the pencil guides of its taper 4B4B4B (DECAY; INK their weight and
+// the ink's), the gate 969696 (FLUTTER lifts it), DUST's specks CDCDCD.
 namespace flicker {
 namespace view {
 using opxy::i32;
@@ -61,12 +64,6 @@ inline i32 lmix(i32 la, i32 lb, i32 t) { return la + (((lb - la) >> 1) * t >> 9)
 inline i32 lmixc(i32 la, i32 lb, i32 t) { return lmix(la, lb, clampi(t, 0, 1024)); }
 // a value from its log2 (Q16), in Q10
 inline i32 q10_of(i32 l) { return static_cast<i32>(pow2v(l) >> 6); }
-// A tenth-degree turn as a unit vector.
-inline Turn turned(i32 tenths) {
-    const i32 ph = (tenths * 4096) / 225;   // 65536 / 3600
-    const Turn t = {cs(ph) >> 4, sn(ph) >> 4};
-    return t;
-}
 // A deterministic noise in Q14 (-16384..16383) for an index and a seed.
 inline i32 hashed(u32 i, u32 seed) {
     u32 h = (i + 1u) * 2654435761u ^ seed;
@@ -76,17 +73,12 @@ inline i32 hashed(u32 i, u32 seed) {
     return static_cast<i32>(h >> 17) - 16384;
 }
 
-template <class F>
-inline void put(F& f, u32 node, i32 x, i32 y, i32 scale, u32 shade, i32 tenths = 0) {
-    place(f, node, x, y, clampi(scale, 64, 2 * unit), shade, shade ? stroke : keep);
-    if (tenths) turn(f, node, turned(tenths));
-}
-
 // ---------------------------------------------------------------- the drawing
 // A drawing is a width profile along one frame's stretch of track: h on a
-// grid of half pixels, x = 0 at the frame's left end (the start of the
-// sound: the film runs right to left past the slit) to 66 px; h is the half
-// width of the clear shape, mirrored about the track's centre line.
+// grid of half pixels, x = 0 at the frame's near end (the start of the
+// sound, which the pull brings to the slit first) to 66 px; h is the half
+// width of the clear shape, mirrored about the track's centre line. lay()
+// then puts it on the track in isometric.
 const i32 grid = 133;            // 66 px in half pixels
 const i32 step = 512;            // Q10 px between grid points
 const i32 full = 21 * unit;      // the height a full drawing reaches, Q10 px (the track is 24 either side)
@@ -725,11 +717,56 @@ inline i32 hit_length(u32 m, const i32* t) {
     const i32 q = static_cast<i32>(s >> 6);
     return clampi(q, 246, 1638);
 }
-// ease out: 1 - (1 - u)^2, Q10: the claw's pull starts at once and settles
+// ease in and settle: 3u^2 - 2u^3, Q10, a ratchet's pull from rest to rest
 inline i32 ease(i32 u) {
-    const i32 v = 1024 - clampi(u, 0, 1024);
-    return 1024 - ((v * v) >> 10);
+    u = clampi(u, 0, 1024);
+    return (((u * u) >> 10) * (3072 - 2 * u)) >> 10;
 }
+
+// ---------------------------------------------------------------- the slat
+// A point on the film (x along it, y across it, Q10 film px) on the screen.
+inline i32 screen_x(i32 x, i32 y) { return art::iso_x + (((x - y) * art::cos30) >> 10); }
+inline i32 screen_y(i32 x, i32 y) { return art::iso_y + ((x + y) >> 1); }
+// A face-on offset (Q10 px: x along the drawing, y across it) laid on the
+// track: 46 film px for the drawing's 66, 12 for each 24 of its height, then
+// isometric. Affine, so the outline stays the outline.
+inline i32 laid_x(i32 x, i32 y) { return (x * art::along_x - y * art::across_x) >> 10; }
+inline i32 laid_y(i32 x, i32 y) { return (x * art::along_y + y * art::across_y) >> 10; }
+inline void lay(Frame::path_type& path) {
+    for (u32 i = 0; i < 64; ++i) {
+        const i32 x = path.points[i].x, y = path.points[i].y;
+        path.points[i].x = laid_x(x, y);
+        path.points[i].y = laid_y(x, y);
+    }
+}
+
+// The taper the pencil guides rule: how far along a frame's drawing (Q10 px
+// of the face-on 66) its envelope runs out, from DECAY. A taper's guides meet
+// where it ends; an exponential's run to twice its length, which bounds it.
+struct Envelope { i32 lo, hi; unsigned char kind; };   // kind: 0 a taper, 1 exponential, 2 exponential on DECAY squared
+const Envelope envelopes[models] = {
+    {L(26), L(220), 0},   // SWEEP
+    {L(22), L(200), 0},   // SCRATCH: its scratches
+    {L(22), L(220), 0},   // RING
+    {L(12), L(120), 1},   // STROKES: the smear
+    {L(6), L(40), 1},     // DOT: its rings
+    {L(22), L(220), 0},   // CARD
+    {L(16), L(220), 2},   // HATCH
+    {L(30), L(320), 0},   // ORNAMENT
+    {L(20), L(200), 0},   // STIPPLE
+    {L(22), L(220), 0},   // BOOP
+    {L(24), L(260), 0},   // WAVE
+    {L(14), L(66), 0},    // CLAW: where its ticks stop
+};
+inline i32 envelope_end(u32 m, i32 decay) {
+    const Envelope& e = envelopes[m];
+    const i32 len = q10_of(lmixc(e.lo, e.hi, e.kind == 2 ? (decay * decay) >> 10 : decay));
+    return e.kind ? 2 * len : len;
+}
+// The weights INK gives the ink and the guides: palette entries 1..6 and 7..9.
+inline u32 ink_weight(i32 raw) { return raw < 8 ? 1u : raw < 16 ? 2u : raw < 24 ? 3u : raw < 56 ? 4u : raw < 96 ? 5u : 6u; }
+inline u32 guide_weight(i32 raw) { return raw < 24 ? 7u : raw < 80 ? 8u : 9u; }
+const u32 frame_shade = 10, frame_faded = 11, ink_faded = 12;   // 12..14, dimmer and dimmer
 }
 
 using namespace view;
@@ -785,7 +822,10 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     } else {
         pos = state.from + (((state.to - state.from) * ease((state.age * 1024) / state.span)) >> 10);
     }
-    const i32 off = pos % art::pitch;   // 0..pitch: the film moves left as it grows
+    // the film steps in quarter pixels, so its last slow quarter pixels
+    // change the screen only when they show
+    pos = (pos >> 8) * 256;
+    const i32 off = pos % art::pitch;   // 0..pitch: the film moves back along the slat as it grows
 
     // --- the drawing: four frames' worth, the same in every frame; reshaped
     // only when a control changes
@@ -796,58 +836,103 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     if (!key) key = 1;
     if (frame.paths[0].key != key) {
         outline(t, tune, m, seed, frame.paths[0]);
+        lay(frame.paths[0]);
         frame.paths[0].key = key;
         for (u32 p = 1; p < 4; ++p) {
             for (u32 i = 0; i < 64; ++i) frame.paths[p].points[i] = frame.paths[0].points[i];
             frame.paths[p].key = key + p;
         }
     }
-    // a thin ink draws pale: a grey a step brighter every eight steps of INK,
-    // the ink's own white from 21
-    const u32 ink_shade = t[5] >= ink_full ? 9u : static_cast<u32>(clampi(6 + (t[5] * 3) / ink_full, 6, 8));
-    // frame k's line (its left end) at window_left + k pitches less the travel
+    const u32 ink = ink_weight(raw[5]);
+
+    // --- the frames: slot k's frame starts k pitches along the slat, less
+    // the pull. Slot 0's frame goes back over the near end; halfway through
+    // the pull it comes round to the far end, where the next frame comes up
+    // over the edge. It dims into the dark as it crosses: by half a pitch it
+    // is at its darkest, at both ends, where it changes over.
+    const i32 half = art::pitch / 2;
+    const i32 far = iabs(off - half);   // 0 at the changeover .. half at rest
+    const u32 fade = far >= (half * 3) / 4 ? 0u : far >= half / 2 ? 1u : far >= half / 4 ? 2u : 3u;
     for (u32 k = 0; k < 4; ++k) {
-        const i32 left = art::window_left + static_cast<i32>(k) * art::pitch - off;
-        place(frame, k, left + art::pitch / 2, art::track_y, unit, ink_shade, stroke);
-        put(frame, art::frame_0 + k, left + art::pitch / 2, art::picture_y, unit, 3);
-        if (k > 0) put(frame, art::perf_0 + k - 1, left, art::perf_y, unit, 6);
-        // DUST: a hair on each frame, the same each frame; grows as DUST rises
-        if (t[7]) {
-            const i32 hx = left + art::pitch / 2 + ((hashed(1u, seed) * 8) >> 14) * unit;
-            const i32 hy = art::picture_y + ((hashed(2u, seed) * 22) >> 14) * unit;
-            const i32 tenth = (hashed(3u, seed) * 600) >> 14;
-            put(frame, art::hair_0 + k, hx, hy, 640 + ((t[7] * 560) >> 10), static_cast<u32>(2 + ((t[7] * 5) >> 10)), tenth ? tenth : 1);
-        } else {
-            hide(frame, art::hair_0 + k);
+        const i32 start = k ? static_cast<i32>(k) * art::pitch - off : off <= half ? -off : 4 * art::pitch - off;
+        const u32 dim = k ? 0u : fade;
+        // the drawing: path p is slot p + 1, so path 0 never comes round
+        const u32 p = (k + 3) & 3u;
+        place(frame, p, screen_x(start + art::track_x, art::track_y), screen_y(start + art::track_x, art::track_y), unit,
+              dim ? ink_faded + dim - 1 : ink, stroke);
+        place(frame, art::pic_0 + k, screen_x(start + art::picture_x, art::picture_y), screen_y(start + art::picture_x, art::picture_y), unit,
+              dim < 2 ? frame_shade : frame_faded, stroke);
+        place(frame, art::perf_0 + k, screen_x(start + art::perf_x, art::perf_y), screen_y(start + art::perf_x, art::perf_y), unit,
+              dim < 2 ? frame_shade : frame_faded, stroke);
+        // DUST: two specks on each frame, the same on every frame, decided
+        // once; the first comes with any DUST and grows, the second joins
+        // from 48
+        for (u32 j = 0; j < 2; ++j) {
+            const u32 n = art::speck_00 + 2 * k + j;
+            const i32 from_ = j ? 48 : 1;
+            if (raw[7] < from_ || dim) { hide(frame, n); continue; }
+            const i32 x = start + art::speck_x[j], y = art::speck_y[j];
+            place(frame, n, screen_x(x, y), screen_y(x, y), 560 + (raw[7] - from_) * (j ? 6 : 5), 0, keep);
         }
     }
-    // the sprocket rollers turn with the film: five teeth a frame
+
+    // --- the pencil guides, ruled on the slat where each frame comes to
+    // rest: from the drawing's start at the ink's full height (INK's taller
+    // ink widens them) to where DECAY's taper runs out, or on to the frame's
+    // end. Each is one segment, or two end to end or overlapping.
     {
-        const i32 tenths_ = (off * 125) >> 12;   // 225 degrees a pitch
-        put(frame, art::roller_l, art::window_left, art::roller_y, unit, 7, tenths_ ? tenths_ : 3600);
-        put(frame, art::roller_r, art::window_right, art::roller_y, unit, 7, tenths_ ? tenths_ : 3600);
-    }
-    // the flywheel turns with the film: a spoke a frame
-    put(frame, art::spokes, art::flywheel_x, art::flywheel_y, unit, 5, ((off * 10) >> 10) ? (off * 10) >> 10 : 3600);
-    // FLUTTER: the slack loop above the sound head hangs deeper and slacker
-    {
-        const i32 depth = (30 * unit) + t[6] * 74;            // the foot's centre below the rollers' centres
-        const i32 foot = art::loop_top + depth;
-        const i32 cx = (art::loop_left + art::loop_right) / 2;
-        put(frame, art::loop_foot, cx, foot, unit, 6);
+        const i32 top = inked(full, t[5]);
+        const i32 end = envelope_end(m, t[1]);
+        const i32 span_ = 66 * unit;
+        i32 tx, ty;   // the top guide's run, face on, from (-33 px, -top)
+        if (end <= span_) { tx = clampi(end, 2 * unit, span_); ty = top; }
+        else { tx = span_; ty = (top * ((span_ * 16) / (end >> 6))) >> 10; }
+        const u32 weight = guide_weight(raw[5]);
         for (u32 side = 0; side < 2; ++side) {
-            const i32 top = art::loop_top;
-            const i32 x = side ? art::loop_right : art::loop_left;
-            const i32 len = foot - top;   // the run to cover, 26 px a segment
-            for (u32 k = 0; k < 6; ++k) {
-                const i32 y = top + ((len - 26 * unit) * static_cast<i32>(k)) / 5;
-                put(frame, (side ? art::loop_r0 : art::loop_l0) + k, x, y, unit, 6);
+            const i32 sy = side ? top : -top, dy = side ? -ty : ty;
+            const i32 vx = laid_x(tx, dy), vy = laid_y(tx, dy);
+            const i32 len6 = isqrt((vx >> 4) * (vx >> 4) + (vy >> 4) * (vy >> 4));   // Q6
+            const i32 len = len6 > 0 ? len6 * 16 : 1;
+            const Turn way = {len6 > 0 ? ((vx >> 4) * unit) / len6 : unit, len6 > 0 ? ((vy >> 4) * unit) / len6 : 0};
+            const i32 L0 = art::guide_length;
+            i32 scale, second;   // the segments' scale; how far along the second starts (-1: none)
+            if (len <= L0) { scale = (len * 16) / (L0 >> 6); second = -1; }
+            else if (len <= 2 * L0) { scale = unit; second = len - L0; }
+            else { scale = (len * 8) / (L0 >> 6); second = len / 2; }
+            scale = clampi(scale, 64, 2 * unit);
+            for (u32 k = 0; k < 4; ++k) {
+                const i32 cx = static_cast<i32>(k) * art::pitch + art::track_x;
+                const i32 x0 = screen_x(cx, art::track_y) + laid_x(-33 * unit, sy), y0 = screen_y(cx, art::track_y) + laid_y(-33 * unit, sy);
+                const u32 a = art::guide_0ta + 4 * k + 2 * side;
+                place(frame, a, x0, y0, scale, weight, stroke);
+                turn(frame, a, way);
+                if (second < 0) { hide(frame, a + 1); continue; }
+                place(frame, a + 1, x0 + ((way.cos * second) >> 10), y0 + ((way.sin * second) >> 10), scale, weight, stroke);
+                turn(frame, a + 1, way);
             }
         }
     }
+
+    // --- the gate: FLUTTER lifts its bar up its posts, away from the film
+    // (a gate that no longer holds the film steady), and a lifted bar
+    // chatters while the film is pulled, dying away as the pull settles
+    {
+        i32 chatter = 0;
+        if (t[6] && state.age < state.span) {
+            const i32 left = ((state.span - state.age) * 1024) / state.span;   // Q10
+            const i32 amp = (t[6] * 3) >> 1;                                   // up to 1.5 px
+            chatter = (((amp * sn(state.age * 448)) >> 14) * left) >> 10;
+            chatter = (chatter >> 9) * 512;   // in half pixels
+        }
+        const i32 x = screen_x(art::gate, art::bar_y);
+        const i32 y = screen_y(art::gate, art::bar_y) - art::bar_z - ((t[6] * art::lift) >> 10) - chatter;
+        place(frame, art::bar_left, x, y, unit, 0, keep);
+        place(frame, art::bar_right, x, y, unit, 0, keep);
+        place(frame, art::bar_top, x, y, unit, 0, keep);
+    }
     // SLIT: the light's line across the track, wider as the slit widens
     for (i32 k = 0; k < 16; ++k) {
-        if (k == slit + 8) put(frame, art::slit_0 + static_cast<u32>(k), art::gate, art::track_y, unit, 10);
+        if (k == slit + 8) place(frame, art::slit_0 + static_cast<u32>(k), screen_x(art::gate, art::track_y), screen_y(art::gate, art::track_y), unit, 0, keep);
         else hide(frame, art::slit_0 + static_cast<u32>(k));
     }
 

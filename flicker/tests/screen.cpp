@@ -7,7 +7,10 @@
 // pixel, or when its closing edge is under a quarter of a pixel. It follows a
 // hit at every eighth value: how many nodes change a frame while the film
 // moves (the device slows past about 20), that a still screen changes none,
-// and that the film comes to rest a whole frame on. It measures every caption
+// and that the film comes to rest a whole frame on. The drawings lie on the
+// film's soundtrack in isometric (display.cpp's lay()): the outline checks
+// read each one back off the track, face on, to see it is still one
+// bilateral shape. It measures every caption
 // in the OP-XY's font, checks the Shift rows, that the track's amp envelope
 // moves nothing, that reduced motion keeps the film still, and that another
 // key's notes move nothing.
@@ -57,9 +60,18 @@ void check_paths(const F& f, const char* when) {
         }
         area /= static_cast<double>(unit) * unit;
         if (area < 4 && area > -4) fail_path(when, "has almost no area (square px)", p, static_cast<long>(area * 1000), 0);
-        // the outline stays one simple shape: its top edge runs left to right
+        // the outline stays one simple shape: read back off the track (the
+        // inverse of lay()'s projection), its top edge runs left to right and
+        // its bottom edge mirrors it
+        double fx[64], fy[64];
+        const double ax = flicker::art::along_x, ay = flicker::art::along_y, bx = flicker::art::across_x, by = flicker::art::across_y;
+        const double det = ax * by + ay * bx;
+        for (unsigned i = 0; i < n; ++i) {
+            fx[i] = (static_cast<double>(q[i].x) * by + static_cast<double>(q[i].y) * bx) / det * unit;
+            fy[i] = (static_cast<double>(q[i].y) * ax - static_cast<double>(q[i].x) * ay) / det * unit;
+        }
         for (unsigned i = 0; i + 1 < 32; ++i)
-            if (q[i + 1].x <= q[i].x || q[63 - i].x != q[i].x || q[i].y > -600 || q[63 - i].y < 600) {
+            if (fx[i + 1] <= fx[i] + 64 || fx[63 - i] < fx[i] - 8 || fx[63 - i] > fx[i] + 8 || fy[i] > -600 || fy[63 - i] < 600) {
                 fail_path(when, "is not a bilateral outline at point", p, i, 0);
                 break;
             }
@@ -264,8 +276,8 @@ int main() {
     }
 
     // dead steps: every control walked in steps of 8 moves the drawing (its
-    // shape or its ink's grey) (or,
-    // FLUTTER, the loop) at every step
+    // shape or its ink's weight), the pencil guides, the gate (FLUTTER) or
+    // the specks (DUST) at every step
     {
         unsigned dead = 0;
         for (unsigned m = 0; m < 12; ++m)
@@ -382,8 +394,9 @@ int main() {
             flicker::display(state, input, frame);
             const opxy::i32 x = frame.nodes[0].x;
             // the drawing's node moves left, or wraps back by a whole frame
+            // (a frame along the film is pitch_x across the screen)
             opxy::i32 d = last - x;
-            if (d < 0) d += flicker::art::pitch;
+            if (d < 0) d += flicker::art::pitch_x;
             if (d > 20 * unit) { std::printf("FAIL the film jumps %d px at frame %d\n", d / unit, t); ++failures; }
             last = x;
         }
