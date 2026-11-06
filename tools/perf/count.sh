@@ -34,12 +34,13 @@ build() {
         if [ ! -f "$WORK/quick.done" ]; then
             SIM_DEFS=-DSIM_QUICK sh "$ROOT/tools/perf/sim.sh" "$WORK/src-$t/$KIT" "$SDK" "$WORK/quick.elf"
             start=$(date +%s)
-            perl -e 'alarm 300; exec @ARGV' "$RUN" "$WORK/quick.elf" && echo "the simulator ran the quick check in $(( $(date +%s) - start )) s" >&2 ||
+            perl -e 'alarm 300; exec @ARGV' "$RUN" "$WORK/quick.elf" >&2 && echo "the simulator ran the quick check in $(( $(date +%s) - start )) s" >&2 ||
                 { echo "the simulator failed the quick check ($?)" >&2; exit 1; }
             touch "$WORK/quick.done"
         fi
         start=$(date +%s)
-        perl -e 'alarm 2400; exec @ARGV' "$RUN" "$stem.elf" > "$stem.counts.part"
+        perl -e 'alarm 2400; exec @ARGV' "$RUN" "$stem.elf" > "$stem.counts.part" ||
+            { echo "the simulator stopped ($?) after $(( $(date +%s) - start )) s; what it counted:" >&2; cat "$stem.counts.part" >&2; exit 1; }
         echo "counted $KIT at $(git rev-parse --short "$1") in $(( $(date +%s) - start )) s" >&2
         mv "$stem.counts.part" "$stem.counts"
     fi
