@@ -372,7 +372,7 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     const i32 xb = xb0 + slide;
     box(frame, art::bridge_l, xb, (28 << 10), art::zs, unit, e1);
     if (kind == mark_spot) at(frame, art::mark_1, prep_x, art::string_1, art::zs + 300, unit, hair1);
-    else if ((kind == mark_glide || kind == mark_bend) && iabs(mark) >= 1024) at(frame, art::mark_1, xb0 + mark, art::string_1, art::zs + 300, unit, hair1);
+    else if ((kind == mark_glide && mark) || (kind == mark_bend && iabs(mark) >= 1024)) at(frame, art::mark_1, xb0 + mark, art::string_1, art::zs + 300, unit, hair1);
     else hide(frame, art::mark_1);
 
     // --- the strings: still, or swinging after the striker meets them
@@ -424,7 +424,7 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
         const i32 aside = m == M::RATTLE || m == M::LID ? t[5] * 14 : 0;
         i32 lift = 0;
         if (active) {
-            lift = (5 << 10) * clampi((age * 1024) / 50, 0, 1024) / 1024;
+            lift = age < 50 ? ((5 << 10) * age) / 50 : 5 << 10;
             if (age >= land) lift = (lift * (fall(age - land, 40) >> 5)) >> 10;
             lift = toward0(lift, 256);
         }
@@ -472,7 +472,7 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
         const i32 bloom_t = secs(shape::along(shape::bloom, t[4] * 64)) + 34;
         i32 rise = 0;
         if (active) {
-            rise = (5 << 10) * clampi((age * 1024) / bloom_t, 0, 1024) / 1024;
+            rise = age < bloom_t ? ((5 << 10) * age) / bloom_t : 5 << 10;
             if (age >= land) rise = (rise * (fall(age - land, 45) >> 5)) >> 10;
             rise = toward0(rise, 256);
         }
