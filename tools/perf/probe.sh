@@ -46,6 +46,17 @@ echo "$progs" | while IFS= read -r line; do
         echo "branch $name: did not assemble: $(head -2 "$W/as.err" | tr '\n' '|')"
     fi
 done
+for name in fwd call; do
+    case $name in
+        fwd) code="R0 = 0; CC = R0 < R0; IF !CC JUMP .Le; OUTC 0x78; .Le: NOP;" ;;
+        call) code="CALL f;" ;;
+    esac
+    printf '.section .text.start\n.global start\nstart:\n    SP.H = 0x07ff;\n    SP.L = 0xfff0;\n    %s\n    OUTC 0x6b;\n    OUTC 0x0a;\n    HLT;\nf:\n    OUTC 0x66;\n    RTS;\n' "$(echo "$code" | sed 's/; */;\n    /g')" > "$W/t.s"
+    "$T/bfin-elf-as" -mcpu=bf707 -o "$W/t.o" "$W/t.s" && "$T/bfin-elf-ld" -T "$HERE/sim.ld" -o "$W/t.elf" "$W/t.o"
+    echo "trace of $name:"
+    perl -e 'alarm 10; exec @ARGV' "$RUN" --trace-insn=on --trace-decode=on --trace-branch=on --trace-events=on "$W/t.elf" 2>&1 | head -60
+    perl -e 'alarm 10; exec @ARGV' "$RUN" --trace-insn "$W/t.elf" 2>&1 | head -5
+done
 echo "exit, step by step:"
 perl -e 'alarm 15; exec @ARGV' "$RUN" --debug-insn "$W/exit.elf" 2>&1 | head -40
 perl -e 'alarm 15; exec @ARGV' "$RUN" --trace-insn "$W/exit.elf" 2>&1 | head -40

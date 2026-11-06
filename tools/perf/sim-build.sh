@@ -17,7 +17,7 @@ mkdir -p build
 cd build
 "../gdb-$VERSION/configure" --target=bfin-elf --prefix="$PREFIX" --disable-gdb --disable-gdbserver \
     --disable-binutils --disable-ld --disable-gas --disable-gprof --disable-nls --disable-werror \
-    --disable-readline --disable-libdecnumber --without-zstd --with-system-zlib > configure.log 2>&1 ||
+    --disable-readline --disable-libdecnumber --without-zstd --with-system-zlib --enable-sim-trace --enable-sim-stdio > configure.log 2>&1 ||
     { tail -40 configure.log; exit 1; }
 make -j4 MAKEINFO=true all-sim > make.log 2>&1 || { grep -n -E "Error|error:|No rule" make.log | head -30; tail -30 make.log; exit 1; }
 mkdir -p "$PREFIX/bin"
