@@ -168,13 +168,19 @@ inline i32 triangle(u32 phase) {
 // (bend, Q31, 0..1), then drawn taller than its height (height, Q8, 256 as
 // drawn, up to 2047) and cut off flat at it: a trapezoid with sloped edges,
 // the square a pen draws.
-inline i32 drawn(u32 phase, i32 bend, i32 height) {
+// (Tall: height over 256, cut flat; the callers choose it once a block)
+template <bool Tall> inline i32 drawn_as(u32 phase, i32 bend, i32 height) {
     const i32 s = sine(phase) >> 1, t = triangle(phase) >> 1;
     const i32 w = s + multiply(t - s, bend);
-    if (height <= 256) return w;
+    if (!Tall) return w;
     const i32 y = multiply(w, height * 1048576);   // w height / 2048
     return clamp(y, -(1 << 27), 1 << 27) * 8;
 }
+inline i32 drawn(u32 phase, i32 bend, i32 height) {
+    return height <= 256 ? drawn_as<false>(phase, bend, height) : drawn_as<true>(phase, bend, height);
+}
+// v / 2^k as C divides, rounding toward zero, without a branch.
+inline i32 div2k(i32 v, unsigned k) { return (v + static_cast<i32>(static_cast<u32>(v >> 31) >> (32 - k))) >> k; }
 // A drawn pulse, Q30: the triangle cut at a level (duty, Q31: the share of a
 // cycle it is high, 0..1) and drawn steep (height, Q8, up to 2047).
 inline i32 pulse(u32 phase, i32 level, i32 height) {

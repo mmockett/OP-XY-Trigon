@@ -52,6 +52,18 @@ inline void crack(Voice& v, i32* x) {
     v.s[14] = a < (one >> 12) ? 0 : a;   // gone 72 dB down
     v.seed = seed;
 }
+// SWEEP's and BOOP's drawing: the shape at a gliding pitch (inc by di a
+// sample), under its envelope (e by de), a quarter of it into x.
+template <bool Tall> inline void glide_draw(i32* x, u32& ph, u32 inc, i32 di, i32 bend, i32 height, i32 e, i32 de) {
+    u32 p = ph;
+    for (unsigned i = 0; i < frames; ++i) {
+        p += inc;
+        inc = static_cast<u32>(static_cast<i32>(inc) + di);
+        x[i] = div2k(multiply(drawn_as<Tall>(p, bend, height), e), 2);
+        e += de;
+    }
+    ph = p;
+}
 // A pitch glide's increment through a block: from inc0 toward inc1.
 inline i32 glide_step(u32 from, u32 to) { return (static_cast<i32>(to >> 1) - static_cast<i32>(from >> 1)) / 32; }
 
@@ -355,13 +367,8 @@ FLICKER_APART void draw_sweep(Voice& v, i32* x) {
     u32 inc = v.inc[0], ph = v.ph[0];
     const i32 di = glide_step(inc, to);
     const i32 bend = v.k[4], height = v.k[5];
-    i32 e = e0;
-    for (unsigned i = 0; i < frames; ++i) {
-        ph += inc;
-        inc = static_cast<u32>(static_cast<i32>(inc) + di);
-        x[i] = multiply(drawn(ph, bend, height), e) / 4;
-        e += de;
-    }
+    if (height <= 256) glide_draw<false>(x, ph, inc, di, bend, height, e0, de);
+    else glide_draw<true>(x, ph, inc, di, bend, height, e0, de);
     v.ph[0] = ph;
     v.inc[0] = to;
     if (v.k[6] && v.ph[1] < 0xf0000000u) {
@@ -689,13 +696,8 @@ FLICKER_APART void draw_boop(Voice& v, i32* x) {
     u32 inc = v.inc[0], ph = v.ph[0];
     const i32 di = glide_step(inc, to);
     const i32 bend = v.k[4], height = v.k[5];
-    i32 e = e0;
-    for (unsigned i = 0; i < frames; ++i) {
-        ph += inc;
-        inc = static_cast<u32>(static_cast<i32>(inc) + di);
-        x[i] = multiply(drawn(ph, bend, height), e) / 4;
-        e += de;
-    }
+    if (height <= 256) glide_draw<false>(x, ph, inc, di, bend, height, e0, de);
+    else glide_draw<true>(x, ph, inc, di, bend, height, e0, de);
     v.ph[0] = ph;
     v.inc[0] = to;
     v.run = v.env[0].g;
