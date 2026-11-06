@@ -528,9 +528,8 @@ static __attribute__((noinline)) void setup_bow(Voice& v, const i32* c, const Co
     const i32 lf0 = shape::along(shape::pitch[M::BOW], c[0]) + k.lt;
     const i32 press = c[2];
     const i32 x = Q16(0.04) + mul16(c[5], Q16(0.28));
-    // (the first eight partials, the lowest two doubled: past the eighth the
-    // thread's smoothed sawtooth gives the string little to answer)
-    for (u32 n = 1; n <= 8; ++n) {
+    v.k[1] = (c[4] - 32768) * 2;   // BEND, -1..1 octave, Q16 (half_rate reads it)
+    for (u32 n = 1; n <= 12; ++n) {
         const i32 lf = lf0 + tables::lnum[n];
         const i32 a = mul(sinpi(n * static_cast<u32>(x)), Q31(0.000006));
         const i32 sg = exp16(log16(Q16(1.0 / 1.4)) + mul16(Q16(0.3), lf - lf0));
@@ -545,8 +544,6 @@ static __attribute__((noinline)) void setup_bow(Voice& v, const i32* c, const Co
     v.bent = v.n;
     v.k[0] = lf0;
     v.k[3] = k.detune;
-    v.k[1] = (c[4] - 32768) * 2;   // BEND, -1..1 octave, Q16
-    if (v.k[1] > -1024 && v.k[1] < 1024) v.k[1] = 0;   // at its centre (63, 64) the pitch holds
     v.bdraw = samples(shape::along(shape::draw, c[3]));
     v.binc = increment(lf0);
     v.bphase = 0;
@@ -563,9 +560,9 @@ static __attribute__((noinline)) void setup_bow(Voice& v, const i32* c, const Co
 // ------------------------------------------------------------ dispatch
 inline void setup_model(Voice& v, u32 m, const i32* c, i32 tune) {
     const Common k = common(v, c, tune);
-    // low modes may run at half the rate, but for BOW's (its bend reaches an
-    // octave up); BRUSH and CHAIN set their high modes themselves
-    v.high = m == M::BOW ? 0 : 2;
+    // low modes may run at half the rate; BRUSH and CHAIN set their high
+    // modes themselves
+    v.high = 2;
     // the soundboard's soft top, lower with SOFT: the una corda's rounder note
     v.topk = onepole_k((m == M::CHAIN ? L(10000.0) : L(5200.0)) - mul16(k.soft, Q16(1.8)));
     switch (m) {
@@ -853,13 +850,19 @@ inline void block_model(Voice& v, i32* out) {
             const i32 p = clamp(pos, 0, 4096);
             env_end = p >= 4096 ? one : p * p * 128;   // Q31
             // the bend along the draw
+            // (partial n at n times its unison's increment, worked out once a
+            // block; past 7 kHz held there; twice it for a mode at half the rate)
             if (v.k[1]) {
                 const i32 lf0 = v.k[0] + lerp16(0, v.k[1], p * 16);
-                v.binc = increment(lf0);
+                const u32 inc0 = increment(lf0), top = increment(L(7000.0));
+                const u32 below = increment(lf0 - v.k[3]), above = increment(lf0 + v.k[3]);
+                v.binc = inc0;
                 for (u32 j = 0; j < v.bent; ++j) {
                     const u32 n = j < 4 ? 1 + j / 2 : j - 1;
-                    const i32 dt = j < 4 ? (j & 1 ? v.k[3] : -v.k[3]) : 0;
-                    v.mode[j].f = sin_inc(increment(clamp(lf0 + tables::lnum[n] + dt, 0, L(7000.0)))) * 2;
+                    const u32 base = j < 4 ? (j & 1 ? above : below) : inc0;
+                    u32 inc = base >= (1u << 28) && n >= 3 ? top : base * n;
+                    inc = inc < top ? inc : top;
+                    v.mode[j].f = sin_inc((v.halves & (1u << j)) ? inc * 2 : inc) * 2;
                 }
             }
         } else {

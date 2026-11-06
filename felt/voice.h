@@ -108,10 +108,12 @@ struct Voice {
 // over the voice's top.
 // Where the voice allows it (high bit 1), a mode that stays low (under
 // 2.4 kHz; under 800 Hz on a gliding string, which starts up to two octaves
-// higher) runs at half the sample rate: its coefficient and its loss for
-// two samples a step.
+// higher; on BOW's, as far under as BEND takes it up) runs at half the
+// sample rate: its coefficient and its loss for two samples a step.
 inline bool half_rate(const Voice& v, i32 lhz) {
-    return (v.high & 2) && lhz < (v.model == M::THUD || v.model == M::TOM ? L(800.0) : L(2400.0));
+    const i32 top = v.model == M::THUD || v.model == M::TOM ? L(800.0)
+                  : v.model == M::BOW ? L(2400.0) - (v.k[1] > 0 ? v.k[1] : 0) : L(2400.0);
+    return (v.high & 2) && lhz < top;
 }
 static __attribute__((noinline)) i32 add_mode(Voice& v, i32 lhz, i32 g, i32 sigma, i32 sigma_d) {
     if (v.n >= max_modes) return -1;
