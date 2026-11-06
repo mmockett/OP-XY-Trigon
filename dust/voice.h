@@ -452,10 +452,10 @@ inline void layer_run(Voice& v, Layer& n, i32* x, unsigned from, unsigned to, i3
     // the low output's share joins the band's (the low part of a band is its body)
     const i32 gb = multiply(add(n.gb, n.gl), a), gh = multiply(n.gh, a);
     if (n.on & 2) {
-        // at half the rate, into the half-rate buffer: the band's noise is 3 dB
-        // denser there, so it comes down by as much
+        // at half the rate, into the half-rate buffer (at the same gain: the
+        // filter's band comes out as loud there, measured)
         ++v.noise_layers;
-        layer_noise(n, x, (from + 1) / 2, (to + 1) / 2, multiply(gb, Q31(0.70710678)), 0);
+        layer_noise(n, x, (from + 1) / 2, (to + 1) / 2, gb, 0);
         return;
     }
     if (n.grain) {
