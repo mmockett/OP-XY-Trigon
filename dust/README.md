@@ -1,6 +1,6 @@
 # DUST
 
-![DUST's screen: a portable record player seen from the front and above, a black 7-inch single on its platter with a three-armed adapter in its centre hole, the tonearm across it from the back right, a dust brush resting on its left, a speed selector marked 33, 45 and 78](docs/screen.png)
+![DUST's screen: an isometric record deck on a near-black plinth, a black 7-inch with a light rim on a dark platter, its grooves and a band for the picked bar, the tonearm across it from its pillar at the right with a light counterweight on its tail, a dust brush on a post at the left](docs/screen.png)
 
 A soul 45 on a portable record player, played as a drum kit. Every key is a
 hit from the break in the middle of the record: a felt-beaten kick, a snare
@@ -207,37 +207,33 @@ over the last quarter under the ceiling keeps every sample under it.
 
 ## Screen
 
-A portable record player seen from the front and a little to its right,
-from above, in one projection: the plinth's top and front (filled dark
-grey), the platter and its edge with its strobe marks, the record (black)
-with its grooves, the light catching them, its label and the three-armed
-adapter in its centre hole, the tonearm from its bearing at the back right
-(the counterweight on its stub, the tube, the headshell with its finger
-lift, the stylus), the cue lever beside the bearing, the speed selector on
-the plinth's front right marked 33, 45 and 78, the dust brush on its own arm
-at the left. The record's rim, the band of the key's hit, the adapter and
-the arm are drawn in the projection every frame they move.
+A record deck in isometric, drawn the way the OP-XY draws its own screens:
+a near-black plinth with hairline seams, a dark platter, and on it the
+record, the tonearm on its pillar and a dust brush on its post. Each encoder
+owns one part of the deck in its own grey, on both pages, and the parts mean
+the same on every key: the record is encoder 1, drawn hollow with a light
+rim; its grooves are encoder 2, in dark grey; the arm is encoder 3, in mid
+grey; the counterweight and the dust brush are encoder 4, in light grey.
 
-A hit plays the record: it turns by the hit's length at its speed while the
-band of brighter groove ahead of the stylus runs under it and is gone; then
-the arm lifts, the record spins back to the cue and the arm settles. What
+Play a key and the needle drops, the record spins at its speed with the cue
+sticker riding round, and it glides to rest as the hit ends, back at its
+cue; the arm lifts when the hit is over. A faster speed spins faster. What
 each control moves:
 
 | Control | On screen |
 | --- | --- |
-| SPEED | The selector's lever, 33 to 45 to 78, and how far the record turns in a hit. |
-| PICK | The tonearm swings across the record: the stylus on an outer groove for bar 1, near the label for bar 8. |
-| LIFT | The cue lever, and the length of the band; at a hit's end the arm lifts and settles. |
-| WEIGHT | The counterweight slides along its stub, back for a light arm, in for a heavy one. |
-| CUE | The band starts ahead of the stylus (early) or behind it (late). |
-| WEAR | Scratches and dust specks on the vinyl, turning with it. |
-| WARP | The record's rim rises and falls; the arm and the band ride it as the record turns. |
-| DRAG | The dust brush comes down onto the record and its bristles bend. |
-| TONE (pad) | The band's sheen, from a dull grey to white. |
-| TUNE (pad) | How far the record turns in a hit. |
+| SPEED | The record: a 12-inch at 33, a 7-inch at 45, a 10-inch at 78, and how fast it spins. |
+| PICK | The picked bar, a solid band in the grooves, from the rim at bar 1 to the label at bar 8; the arm swings to follow it. |
+| LIFT | How high the head waits over the record: the sooner it lifts, the higher. |
+| WEIGHT | The counterweight slides along the arm's tail, nearer the pillar for a heavier arm. |
+| CUE | A sticker on the record's rim, ahead of the stylus for an early landing, behind it for a late one. |
+| WEAR | The grooves wander, more crooked the more worn, clean at 0. |
+| WARP | The head rides up and down with the warped disc as it spins. |
+| DRAG | The dust brush comes down its post onto the record. |
+| TUNE (pad) | How fast the record spins. |
 
 Only the selected key's hits move it, an idle screen changes nothing, and
-reduced motion keeps it still. While notes sound it changes 4.7 nodes a frame on average while a hit moves, 14.9 at its busiest setting and 24 in its busiest frame; at rest, none.
+reduced motion keeps it still. While notes sound it changes 4.3 nodes a frame on average while a hit moves, 6.7 at its busiest setting and 7 in its busiest frame; at rest, none.
 
 ## CPU
 
