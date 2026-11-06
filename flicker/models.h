@@ -567,9 +567,19 @@ FLICKER_APART void draw_hatch(Voice& v, i32* x) {
     Svf sv = v.sv[0];
     u32 seed = v.seed;
     i32 e = e0;
+    // how many of the six lines are dark, three at a time (so the phases
+    // stay in registers), then the lines, the noise and the filter
+    u32 count[frames];
     for (unsigned i = 0; i < frames; ++i) {
-        p0 += i0; p1 += i1; p2 += i2; p3 += i3; p4 += i4; p5 += i5;
-        const i32 lines = static_cast<i32>((p0 >> 31) + (p1 >> 31) + (p2 >> 31) + (p3 >> 31) + (p4 >> 31) + (p5 >> 31)) * 0x0aaaaaaa - 0x1fffffff;
+        p0 += i0; p1 += i1; p2 += i2;
+        count[i] = (p0 >> 31) + (p1 >> 31) + (p2 >> 31);
+    }
+    for (unsigned i = 0; i < frames; ++i) {
+        p3 += i3; p4 += i4; p5 += i5;
+        count[i] += (p3 >> 31) + (p4 >> 31) + (p5 >> 31);
+    }
+    for (unsigned i = 0; i < frames; ++i) {
+        const i32 lines = static_cast<i32>(count[i]) * 0x0aaaaaaa - 0x1fffffff;
         const i32 n = noise(seed) >> 2;
         const i32 m = n + multiply(lines - n, metal);
         const i32 h = sv.high(m >> 1, f, q);
@@ -580,6 +590,18 @@ FLICKER_APART void draw_hatch(Voice& v, i32* x) {
     v.sv[0] = sv;
     v.seed = seed;
     v.run = v.env[0].g;
+}
+// ORNAMENT's bell, its ping over the wash, from level g by dg a sample (its
+// own function, so its loop keeps the hardware loop).
+FLICKER_APART void ornament_bell(Voice& v, i32* x, i32 g, i32 dg) {
+    u32 b0 = v.ph[6], b1 = v.ph[7], b2 = v.ph[8];
+    const u32 j0 = scale_inc(v.inc[6], v.fm), j1 = scale_inc(v.inc[7], v.fm), j2 = scale_inc(v.inc[8], v.fm);
+    for (unsigned i = 0; i < frames; ++i) {
+        b0 += j0; b1 += j1; b2 += j2;
+        x[i] += multiply((sine(b0) >> 3) + (sine(b1) >> 4) + (sine(b2) >> 5), g);
+        g += dg;
+    }
+    v.ph[6] = b0; v.ph[7] = b1; v.ph[8] = b2;
 }
 FLICKER_APART void draw_ornament(Voice& v, i32* x) {
     i32 e0 = 0, e1 = 0;
@@ -592,14 +614,27 @@ FLICKER_APART void draw_ornament(Voice& v, i32* x) {
     Svf sv = v.sv[0];
     u32 seed = v.seed;
     i32 e = e0;
+    // the three ring pairs, a pair at a time: two ruled lines crossing, light
+    // where exactly one passes (+w, else -w, chosen by a mask)
+    i32 rings[frames];
     for (unsigned i = 0; i < frames; ++i) {
-        p0 += i0; p1 += i1; p2 += i2; p3 += i3; p4 += i4; p5 += i5;
-        // a ring pair: two ruled lines crossing, light where exactly one passes
-        const i32 r0 = ((p0 ^ p3) >> 31) ? w0 : -w0;
-        const i32 r1 = ((p1 ^ p4) >> 31) ? w1 : -w1;
-        const i32 r2 = ((p2 ^ p5) >> 31) ? w2 : -w2;
+        p0 += i0; p3 += i3;
+        const i32 m = ~(static_cast<i32>(p0 ^ p3) >> 31);
+        rings[i] = (w0 ^ m) - m;
+    }
+    for (unsigned i = 0; i < frames; ++i) {
+        p1 += i1; p4 += i4;
+        const i32 m = ~(static_cast<i32>(p1 ^ p4) >> 31);
+        rings[i] += (w1 ^ m) - m;
+    }
+    for (unsigned i = 0; i < frames; ++i) {
+        p2 += i2; p5 += i5;
+        const i32 m = ~(static_cast<i32>(p2 ^ p5) >> 31);
+        rings[i] += (w2 ^ m) - m;
+    }
+    for (unsigned i = 0; i < frames; ++i) {
         const i32 n = multiply(noise(seed) >> 3, wn);
-        const i32 h = sv.high((r0 + r1 + r2 + n) >> 1, f, q);
+        const i32 h = sv.high((rings[i] + n) >> 1, f, q);
         x[i] = multiply(opxy::q31::add(h, sv.bp >> 2), e) / 2;
         e += de0;
     }
@@ -607,19 +642,7 @@ FLICKER_APART void draw_ornament(Voice& v, i32* x) {
     v.sv[0] = sv;
     v.seed = seed;
     const i32 bell = v.k[4];
-    if (bell && e1 > 4096) {
-        // the bell's ping over the wash
-        u32 b0 = v.ph[6], b1 = v.ph[7], b2 = v.ph[8];
-        const u32 j0 = scale_inc(v.inc[6], v.fm), j1 = scale_inc(v.inc[7], v.fm), j2 = scale_inc(v.inc[8], v.fm);
-        i32 g = multiply(e1, bell);
-        const i32 dg = multiply(de1, bell);
-        for (unsigned i = 0; i < frames; ++i) {
-            b0 += j0; b1 += j1; b2 += j2;
-            x[i] += multiply((sine(b0) >> 3) + (sine(b1) >> 4) + (sine(b2) >> 5), g);
-            g += dg;
-        }
-        v.ph[6] = b0; v.ph[7] = b1; v.ph[8] = b2;
-    }
+    if (bell && e1 > 4096) ornament_bell(v, x, multiply(e1, bell), multiply(de1, bell));
     v.run = v.env[0].g;
 }
 FLICKER_APART void draw_stipple(Voice& v, i32* x) {
