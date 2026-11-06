@@ -32,7 +32,7 @@ build() {
         "$OBJDUMP" -d -r -C "$WORK/fw-$t/analysis/$KIT/voice.o" > "$stem.lst"
         sh "$ROOT/tools/perf/sim.sh" "$WORK/src-$t/$KIT" "$SDK" "$stem.elf"
         start=$(date +%s)
-        "$RUN" "$stem.elf" > "$stem.counts.part"
+        perl -e 'alarm 2400; exec @ARGV' "$RUN" "$stem.elf" > "$stem.counts.part"
         echo "counted $KIT at $(git rev-parse --short "$1") in $(( $(date +%s) - start )) s" >&2
         mv "$stem.counts.part" "$stem.counts"
     fi
