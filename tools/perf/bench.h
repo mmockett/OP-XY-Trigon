@@ -162,7 +162,9 @@ inline u32 run_voices(u32 run) { return run >= 1 && run <= kSingle ? 1 : run == 
 inline i32 marked() { return static_cast<i32>(42u * 32537631u + 16268815u); }
 
 // Sink: u32 clock(); void block(u32 voice, const i32* output); void spent(u32 cycles).
-template <class Sink> void run(u32 index, u32 heavy_model, u32 heavy_level, Sink& sink) {
+// (blocks: fewer than the profiler's 1500 to count a run's first cycles only;
+// the strikes repeat every 100 blocks)
+template <class Sink> void run(u32 index, u32 heavy_model, u32 heavy_level, Sink& sink, u32 blocks = kBlocks) {
     using namespace opxy::platform;
     const bool one = index >= 1 && index <= kSingle, choke = index == kSingle + 1;
     const u32 sounding = run_voices(index);
@@ -192,7 +194,7 @@ template <class Sink> void run(u32 index, u32 heavy_model, u32 heavy_level, Sink
     Handle* voices_of[kVoices];
     for (u32 v = 0; v < sounding; ++v) voices_of[v] = factory(kVoiceIndices - 1 - v, 0);
     i32 output[kFrames];
-    for (u32 block = 0; block < kBlocks; ++block) {
+    for (u32 block = 0; block < blocks; ++block) {
         u32 spent = sink.clock();
         if (choke) {
             if (block % 8u == 0) start(voices_of[(block / 8u) % 2u], 53);
