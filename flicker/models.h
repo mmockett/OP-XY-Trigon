@@ -404,7 +404,7 @@ FLICKER_APART void draw_scratch(Voice& v, i32* x) {
         a = static_cast<u32>(static_cast<i32>(a) + da);
         b = static_cast<u32>(static_cast<i32>(b) + db);
         const i32 body = (sine(pa) >> 2) + (sine(pb) >> 3);   // Q31 / 4 + / 8
-        if (--count <= 0) { held = noise(seed) >> 1; count = hold; }
+        if (__builtin_expect(--count <= 0, 0)) { held = noise(seed) >> 1; count = hold; }
         const i32 n = sv.band(held >> 1, f, q);
         x[i] = (multiply(body, e0) >> 1) + multiply(n, e1) / 4;
         e0 += de0;
