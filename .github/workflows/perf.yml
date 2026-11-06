@@ -30,6 +30,26 @@ env:
   OPEN_XY_SHA: 810db9d8dce1244a241a3281aa6490bff923908e
   BASE: ${{ github.event.inputs.base || 'v1.0.0' }}
 jobs:
+  # The kits whose folders differ from the base, for blackfin-count (all
+  # three when none does, to count the base).
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      kits: ${{ steps.kits.outputs.kits }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: kits
+        run: |
+          git fetch --tags --force origin
+          kits=""
+          for kit in dust felt flicker; do
+            [ "$(git rev-parse "$BASE:$kit")" = "$(git rev-parse "HEAD:$kit")" ] || kits="$kits \"$kit\","
+          done
+          [ -n "$kits" ] || kits='"dust", "felt", "flicker",'
+          echo "kits=[${kits%,}]" | tee -a "$GITHUB_OUTPUT"
+
   render-identity:
     runs-on: ubuntu-latest
     strategy:
@@ -97,12 +117,13 @@ jobs:
           retention-days: 14
 
   blackfin-count:
+    needs: changes
     runs-on: macos-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        kit: [dust, felt, flicker]
+        kit: ${{ fromJSON(needs.changes.outputs.kits) }}
     steps:
       - uses: actions/checkout@v4
         with:
