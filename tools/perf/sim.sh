@@ -14,7 +14,7 @@ FLAGS="-mcpu=bf707 -O2 -std=gnu++11 -ffreestanding -fno-exceptions -fno-rtti -fn
  -fno-use-cxa-atexit -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-common
  -fno-tree-loop-distribute-patterns -fomit-frame-pointer -nostdinc++ -Wall -Werror -Wno-unused-variable"
 INC="-I$SDK -I$SDK/sdk/include -I$SDK/sdk/platform -I$SDK/sdk/platform/opxy-1.2.1 -I$KIT -I$SDK/sdk/platform/blackfin/freestanding"
-DEFS=$(python3 -I "$HERE/kit.py" "$KIT" defines)
+DEFS="$(python3 -I "$HERE/kit.py" "$KIT" defines) ${SIM_DEFS:-}"
 objects=""
 cc() {   # source object
     "$TOOLS/bfin-elf-g++" $FLAGS $INC $DEFS -S "$1" -o "$WORK/$2.s"
