@@ -1,26 +1,25 @@
 #include "display.h"
 #include "dsp.h"
 
-// DUST's screen: a portable record player with a soul 45 on it, seen from
-// the front and above. Its plinth, platter, record and fittings are artwork;
-// the record's rim, the band of the selected key's hit, the spider adapter
-// and the tonearm are the four reshaping outlines, drawn in the projection
-// make_panel.py writes into art.h; the rest are parts placed from the key's
-// controls. A hit plays the record: it turns by the hit's length at its
-// speed while the groove's band runs under the stylus, then the arm lifts,
-// the record spins back to the cue and the arm settles.
+// DUST's screen: an isometric record deck in the stock look. The plinth,
+// platter, pillar, spindle and the brush's post are artwork; the groove's
+// two halves, the picked bar and the arm are the four reshaping outlines,
+// drawn in the projection make_panel.py writes into art.h; the record, its
+// label and cue sticker, the counterweight, the headshell and the dust brush
+// are nodes placed from the key's controls. The grey is the encoder's: the
+// record (SPEED, CUE) hollow, the grooves (PICK, WEAR) 4B4B4B, the arm
+// (LIFT, WARP) 969696, the counterweight and brush (WEIGHT, DRAG) CDCDCD.
+// A hit drops the head onto the record and spins it a whole number of turns
+// at its speed, settling as the hit ends; the head lifts at LIFT.
 namespace dust {
 namespace view {
 using namespace opxy::draw;
 
 // ---------------------------------------------------------------- arithmetic
-inline i32 iabs(i32 v) { return v < 0 ? -v : v; }
 inline i32 clampi(i32 v, i32 lo, i32 hi) { return v < lo ? lo : v > hi ? hi : v; }
 // sin and cos of a turn (65536 a turn), Q14
 inline i32 sn(i32 turn) { return sine(static_cast<u32>(turn) << 16) >> 17; }
 inline i32 cs(i32 turn) { return sn(turn + 16384); }
-// a + (b - a) t, t a Q10 unit, |b - a| < 2^21
-inline i32 lerp(i32 a, i32 b, i32 t) { return a + (((b - a) >> 2) * t >> 8); }
 // t a Q10 unit eased out: 1 - (1 - t)^2
 inline i32 ease_out(i32 t) { t = clampi(t, 0, 1024); return 1024 - (((1024 - t) * (1024 - t)) >> 10); }
 // eased in and out: 3t^2 - 2t^3
@@ -50,29 +49,52 @@ inline Turn direction(i32 dx, i32 dy) {
 }
 
 // ---------------------------------------------------------------- the projection
-// World points in sixteenths of a millimetre to screen points in Q10 px.
+// World points in Q4 (16 a pixel) to screen points in Q10 px: isometric,
+// x down to the right, y down to the left, z up.
 struct Pt { i32 x, y; };
 inline Pt project(i32 x, i32 y, i32 z) {
     Pt p;
-    p.x = (art::cx >> 6) + ((art::ax * x + art::ay * y) >> 10);
-    p.y = (art::cy >> 6) - ((art::bx * x + art::by * y + art::bz * z) >> 10);
+    p.x = art::ox + (((x - y) * 14189) >> 8);   // cos 30, Q14
+    p.y = art::oy + (x + y) * 32 - z * 64;
     return p;
 }
-// a point at radius r (mm Q4) and angle a (a turn 65536) in the record's plane at height z
-inline Pt on_circle(i32 r, i32 a, i32 z) { return project((r * cs(a)) >> 14, (r * sn(a)) >> 14, z); }
+// A point at radius r (Q4) in a level plane, at angle a about its centre as
+// the screen sees it (65536 a turn, 0 screen right, clockwise): its offset
+// from the centre in Q10 px. The circle is an ellipse sqrt(1.5) wide and
+// sqrt(0.5) tall.
+inline Pt ring(i32 r, i32 a) {
+    Pt p;
+    p.x = (((r * cs(a)) >> 4) * 1254) >> 14;
+    p.y = (((r * sn(a)) >> 4) * 724) >> 14;
+    return p;
+}
 
 // ---------------------------------------------------------------- the frame
-template <class F>
-inline void put(F& f, u32 node, i32 x, i32 y, i32 scale, u32 shade_, Turn t) {
-    place(f, node, x, y, clampi(scale, 64, 2 * unit), shade_, shade_ ? stroke : keep);
-    turn(f, node, t);
-}
 const Turn upright = {unit, 0};
 template <class F>
-inline void put_shaded(F& f, u32 node, i32 x, i32 y, i32 shade_, Turn t = upright) {
-    if (shade_ <= 0) { hide(f, node); return; }
-    put(f, node, x, y, unit, static_cast<u32>(shade_ > 8 ? 8 : shade_), t);
+inline void put(F& f, u32 node, Pt p, i32 scale = unit, Turn t = upright) {
+    place(f, node, p.x, p.y, scale, 0, keep);
+    turn(f, node, t);
 }
+// A reshaping outline: its points (Q10 px about its origin) only when they change.
+template <class F>
+inline void reshape(F& f, u32 path, const Pt* pts, Pt origin, u32 shade_) {
+    u32 key = 2166136261u;
+    for (u32 i = 0; i < 64; ++i) {
+        key = (key ^ static_cast<u32>(pts[i].x)) * 16777619u;
+        key = (key ^ static_cast<u32>(pts[i].y)) * 16777619u;
+    }
+    if (!key) key = 1;
+    if (f.paths[path].key != key) {
+        for (u32 i = 0; i < 64; ++i) {
+            f.paths[path].points[i].x = pts[i].x;
+            f.paths[path].points[i].y = pts[i].y;
+        }
+        f.paths[path].key = key;
+    }
+    place(f, path, origin.x, origin.y, unit, shade_, stroke);
+}
+const u32 groove_shade = 1, bar_shade = 2, arm_shade = 3;
 
 // ---------------------------------------------------------------- captions
 const u32 cap = 1 + header_capacity;
@@ -182,30 +204,42 @@ inline void pad_text(char* out, u32 field, i32 v) {
 const char* const titles8[8] = {"speed", "pick", "lift", "weight", "cue ms", "wear", "warp", "drag"};
 
 // ---------------------------------------------------------------- the hit's time
-// The needle's time in a hit (Q10 s): its early lead and the lift.
+// The needle's time in a hit (Q10 s): its early lead and the lift, as the voice plays them.
 struct Play {
     i32 lead, length, total;   // Q10 s
-    i32 turns;                 // the record's turn over the whole play, 65536 a turn
-    i32 band, gap;             // the band's length and where it starts after the stylus (turns)
 };
-inline Play play_of(u32 m, const i32* r, i32 tune) {
+inline Play play_of(u32 m, const i32* r) {
     Play p;
     p.lead = (rec::cue_early_tenths(r[rec::CUE]) * 1024 + 5000) / 10000;
     p.length = static_cast<i32>(pow2(clampi(rec::lift_log(m, r[rec::LIFT]) + 10 * octave, 0, 20 * octave)));
     p.total = p.lead + p.length;
-    // turns a second: rpm / 60, the key's TUNE as a finer speed
-    const i32 lw = rec::speed_log(r[rec::SPEED]) + ST(1) * clampi(tune, -16, 15) + L(0.75);
-    const i32 per = static_cast<i32>(pow2(lw + 16 * octave));   // Q16 turns a second
-    p.turns = (per >> 4) * (p.total >> 2) >> 4;
-    p.band = (per >> 4) * (p.length >> 2) >> 4;
-    if (p.band > 58982) p.band = 58982;   // at most 0.9 of a turn
-    const i32 late = (rec::cue_late_tenths(m, r[rec::CUE]) * 1024 + 5000) / 10000;
-    // (drawn four times as far as the groove runs, so a few milliseconds read)
-    p.gap = 4 * (((per >> 4) * p.lead >> 6) - ((per >> 4) * late >> 6));
-    // a drag slows the platter as it plays
-    p.turns -= (p.turns >> 7) * (rec::drag_tenths(r[rec::DRAG]) * 8 / 10) >> 3;
     return p;
 }
+// The record's spin in a hit: a whole number of turns, as many as its speed
+// (drawn 1.6 times life, TUNE as a finer speed) turns in the hit, at least
+// one, so it comes to rest where it was cued; and how long they take (Q10 s).
+struct Spin {
+    i32 turns, time;
+};
+inline Spin spin_of(const Play& play, i32 speed, i32 tune) {
+    const i32 rate = clampi(rec::speed_log(speed) + ST(1) * tune + L(45.0 / 60.0 * 1.6), L(0.4), L(2.5));
+    const i32 per = static_cast<i32>(pow2(rate + 10 * octave));   // turns a second, Q10: 410..2560
+    Spin s;
+    s.turns = clampi((per * play.total + (1 << 19)) >> 20, 1, 8);
+    s.time = ratio(s.turns * 1024, per);
+    return s;
+}
+// The record's turn (65536 a turn) at a time into its spin: at speed for
+// the first half, then gliding to rest; whole turns at the end.
+inline i32 spun(const Spin& s, i32 age) {
+    if (age >= s.time) return 0;
+    const i32 u = clampi(ratio(age, s.time), 0, 1024);
+    const i32 k = u <= 512 ? u : u - (((u - 512) * (u - 512)) >> 10);   // 0..768
+    return (s.turns * k * 256) / 3;
+}
+const i32 drop_time = 102, lift_time = 205;   // Q10 s: the head's drop at the hit and its lift
+// the arm's outline: how many points each of its eight edges takes, 64 in all
+const u8 runs[8] = {7, 23, 1, 1, 23, 7, 1, 1};
 }
 using namespace view;
 
@@ -223,7 +257,7 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
         r[i] = static_cast<i32>(v > 127 ? 127 : v);
         t[i] = (r[i] * 8257) >> 10;   // Q10, 127 -> 1024
     }
-    const i32 tune = clampi(input.pad[0], -16, 15), tone = clampi(input.pad[1], -8, 7);
+    const i32 tune = clampi(input.pad[0], -16, 15);
     const bool still = input.reduced_motion != 0;
 
     // --- the hit: the selected key's notes only (the platform's serial is the key's)
@@ -238,263 +272,144 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     else state.age = clampi(state.age + step, 0, 1 << 24);
     const i32 age = state.age;
 
-    const Play play = play_of(m, r, tune);
-    // the record's turn now (65536 a turn, clockwise seen from above, so the
-    // angle falls), the arm's lift (Q10) and whether anything moves
-    i32 turned = 0, lift = 0;
-    const i32 back_at = play.total + 205, back_len = 307, end = play.total + 563;
-    if (age < play.total) {
-        turned = (play.turns >> 4) * (ease_out(ratio(age, play.total)) >> 2) >> 4;
-    } else if (age < end) {
-        lift = age < play.total + 123 ? ease_out(ratio(age - play.total, 123)) : age < back_at + back_len ? 1024 : 1024 - ease(ratio(age - back_at - back_len, end - back_at - back_len));
-        const i32 back = age < back_at ? 1024 : 1024 - ease(ratio(age - back_at, back_len));
-        turned = (play.turns >> 4) * (back >> 2) >> 4;
-    }
-    const i32 rho = -turned;   // the record's angle
+    const Play play = play_of(m, r);
+    const Spin spin = spin_of(play, r[rec::SPEED], tune);
+    const i32 rho = spun(spin, age);   // the record's turn, clockwise as the screen sees it
+    // the head: down on the record from the hit until the hit's end, then lifting (Q10)
+    const i32 held = play.total > drop_time ? play.total : drop_time;
+    i32 down = 0;
+    if (age < drop_time) down = ease_out(ratio(age, drop_time));
+    else if (age < held) down = 1024;
+    else if (age < held + lift_time) down = 1024 - ease(ratio(age - held, lift_time));
 
-    // --- the stylus: PICK swings the arm across the record, bar 1 outermost
-    const i32 pick = t[rec::PICK];
-    const i32 rad = art::r_outer + (((art::r_inner - art::r_outer) * pick) >> 10);
-    const i32 at16 = pick * 16;
-    const u32 ai = static_cast<u32>(at16 >> 10) < 16 ? static_cast<u32>(at16 >> 10) : 15;
-    const i32 af = at16 - static_cast<i32>(ai << 10);
-    const i32 theta = art::stylus_angle[ai] + (((art::stylus_angle[ai + 1] - art::stylus_angle[ai]) * af) >> 10);
-    // WARP: the disc rises and falls twice a turn, its rise turning with it (mm Q4)
-    const i32 warp = (rec::warp_share(r[rec::WARP]) * 7 * 16) >> 16;   // up to 7 mm, drawn larger than life
-    const i32 warp_phase = 6000;
-    const i32 ride = (warp * sn(2 * (theta - rho) + warp_phase)) >> 14;
+    // --- E1, the record: SPEED sizes it, 33 a 12-inch, 45 a 7-inch, 78 a 10-inch (Q4 radius)
+    const i32 rs = r[rec::SPEED];
+    const i32 R = rs <= 64 ? 704 - ((rs * 4506) >> 10) : 422 + (((rs - 64) * 2861) >> 10);
+    const i32 scale = (R * 1024) / art::r_ref;
+    const Pt centre = project(art::rx, art::ry, art::z_top);
+    put(frame, art::record_edge, centre, scale);
+    put(frame, art::record_top, centre, scale);
+    put(frame, art::label, centre, scale);
+    // the grooves' field and its eight bars, outermost first (Q4 radii)
+    const i32 g_in = ((R * 369) >> 10) + 8, g_out = (R * 952) >> 10;
+    const i32 bw = (g_out - g_in) >> 3;
+    // E2, PICK: the picked bar, sliding across the eight bars (Q10, 0..7)
+    const i32 c = (r[rec::PICK] * 7168) / 127;
+    const i32 bc = g_out - (((2 * c + 1024) * bw) >> 11);
 
-    // --- path 0: the record's rim, at half size, rising and falling with the warp
+    // --- the stylus over the picked bar: where the arm's circle about the pivot meets it
+    const i32 si = clampi(bc - art::stylus_lo, 0, (art::stylus_n - 1) * 16 - 1);
+    const i32 e = si >> 4, f = si & 15;
+    const i32 sx = art::stylus_x[e] + (((art::stylus_x[e + 1] - art::stylus_x[e]) * f) >> 4);
+    const i32 sy = art::stylus_y[e] + (((art::stylus_y[e + 1] - art::stylus_y[e]) * f) >> 4);
+    const i32 phi = art::stylus_phi[e] + (((art::stylus_phi[e + 1] - art::stylus_phi[e]) * f) >> 4);
+
+    Pt pts[64];
+    // --- paths 0 and 1, E2: the groove, two walls a half-pitch apart spiralling
+    // in 8 px a turn from the label to the outer edge, in two halves (the outer
+    // half path 0). WEAR makes each point wander by its own fixed amount; the
+    // record's turn carries them round.
     {
-        u32 key = 0x9e3779b9u ^ static_cast<u32>(warp * 7919);
-        if (warp) key = (key ^ static_cast<u32>(rho)) * 16777619u;
-        if (!key) key = 1;
-        if (frame.paths[0].key != key) {
-            for (u32 i = 0; i < 64; ++i) {
-                const i32 a = static_cast<i32>(i) * 1024 + 512;
-                const i32 z = warp ? (warp * sn(2 * (a - rho) + warp_phase)) >> 14 : 0;
-                const Pt p = on_circle(art::r_record, a, z);
-                frame.paths[0].points[i].x = (p.x - (art::cx >> 6)) / 2;
-                frame.paths[0].points[i].y = (p.y - (art::cy >> 6)) / 2;
+        const i32 U = (g_out - g_in - 64) * 512;   // the walls' length in turns (65536 a turn)
+        const i32 amp = (20 * t[rec::WEAR]) >> 10;   // up to 1.25 px
+        for (u32 k = 0; k < 2; ++k) {
+            const i32 ua = k ? 0 : U >> 1, ub = k ? U >> 1 : U;
+            for (u32 i = 0; i < 32; ++i) {
+                const i32 u = ua + ((ub - ua) * static_cast<i32>(i)) / 31;
+                const i32 r1 = g_in + 64 + (u >> 9);
+                const i32 a = u + rho;
+                pts[i] = ring(r1 + ((amp * art::wander[k][0][i]) >> 7), a);
+                pts[63 - i] = ring(r1 - 64 + ((amp * art::wander[k][1][i]) >> 7), a);
             }
-            frame.paths[0].key = key;
-        }
-        place(frame, 0, art::cx >> 6, art::cy >> 6, 2 * unit, 13, stroke);
-    }
-
-    // --- path 1: the band of the hit's groove, ahead of the stylus, at half size
-    {
-        // its start and end along the groove (turns; the record's turn carries it
-        // to the stylus, which takes it in)
-        i32 lo = theta + play.gap - turned;
-        const i32 hi = lo + play.band;
-        if (turned > 0 && lo < theta) lo = theta;
-        const i32 len = hi - lo;
-        const i32 minimum = 2900;   // about 16 degrees: shorter, it fades out instead
-        const i32 shade_ = len <= 0 ? 0 : len >= minimum ? 8 : (len * 8) / minimum;
-        // TONE: the band's sheen, from a dull grey at -8 to white at +7
-        const i32 sheen = clampi(shade_ - 8 + 3 + ((tone + 8) * 4) / 15, 0, 7);
-        if (sheen <= 0 || shade_ <= 0) {
-            hide(frame, 1);
-            if (!frame.paths[1].key) frame.paths[1].key = 1;
-        } else {
-            const i32 span_ = len >= minimum ? len : minimum;
-            const i32 a0 = hi - span_;
-            u32 key = 0x85ebca6bu ^ static_cast<u32>(a0 * 31 + span_ * 131 + rad + warp * 7 + (warp ? rho * 3 : 0));
-            if (!key) key = 1;
-            if (frame.paths[1].key != key) {
-                for (u32 i = 0; i < 32; ++i) {
-                    const i32 a = a0 + ((span_ >> 5) * static_cast<i32>(i) * 32 + 16) / 31;
-                    const i32 z = warp ? (warp * sn(2 * (a - rho) + warp_phase)) >> 14 : 0;
-                    const Pt o = on_circle(rad + 30, a, z), n = on_circle(rad - 30, a, z);
-                    frame.paths[1].points[i].x = (o.x - (art::cx >> 6)) / 2;
-                    frame.paths[1].points[i].y = (o.y - (art::cy >> 6)) / 2;
-                    frame.paths[1].points[63 - i].x = (n.x - (art::cx >> 6)) / 2;
-                    frame.paths[1].points[63 - i].y = (n.y - (art::cy >> 6)) / 2;
-                }
-                frame.paths[1].key = key;
-            }
-            place(frame, 1, art::cx >> 6, art::cy >> 6, 2 * unit, static_cast<u32>(8 + sheen), stroke);
+            reshape(frame, k, pts, centre, groove_shade);
         }
     }
-
-    // --- path 2: the spider adapter in the big hole, turning with the record
+    // --- path 2, E2: the picked bar, a solid band: a thin ribbon round the
+    // record stroked wide, its ends meeting under the stylus
     {
-        u32 key = 0x27d4eb2fu ^ static_cast<u32>(rho);
-        if (!key) key = 1;
-        if (frame.paths[2].key != key) {
-            // three arms, 21 points each and one more where the first begins
-            u32 n = 0;
-            for (u32 arm_ = 0; arm_ < 3; ++arm_) {
-                const i32 base = rho + static_cast<i32>(arm_) * 21845 + 4000;
-                // the valley between arms on the hub, out along one side, round the tip, back
-                static const i16 da[22] = {-10923, -9300, -7600, -6000, -4700, -3300, -2400, -1900, -1400, -900, -400, 0, 400, 900, 1400, 1900, 2400, 3300, 4700, 6000, 7600, 9300};
-                static const i16 rr[22] = {150, 150, 150, 152, 160, 196, 246, 280, 292, 296, 297, 297, 296, 292, 280, 246, 196, 160, 152, 150, 150, 150};
-                for (u32 k = arm_ ? 1 : 0; k < 22 && n < 64; ++k) {
-                    const Pt p = on_circle(rr[k], base + da[k], 8);
-                    frame.paths[2].points[n].x = p.x - (art::cx >> 6);
-                    frame.paths[2].points[n].y = p.y - (art::cy >> 6);
-                    ++n;
-                }
-            }
-            frame.paths[2].key = key;
+        const i32 lo = phi + 91, span = 65536 - 182;
+        for (u32 i = 0; i < 32; ++i) {
+            const i32 a = lo + (span * static_cast<i32>(i)) / 31;
+            pts[i] = ring(bc + 5, a);
+            pts[63 - i] = ring(bc - 5, a);
         }
-        place(frame, 2, art::cx >> 6, art::cy >> 6, unit, 6, stroke);
+        reshape(frame, 2, pts, centre, bar_shade);
+    }
+    // --- E1 page 2, CUE: the cue sticker on the rim, ahead of the stylus for an
+    // early landing, behind it for a late one; it turns with the record
+    {
+        const i32 a = phi - (64 - r[rec::CUE]) * 171 + rho;
+        const Pt o = ring(R - 48, a);
+        Pt p = {centre.x + o.x, centre.y + o.y};
+        put(frame, art::sticker, p);
     }
 
-    // --- the record's marks: the label's printed bar, scratches and dust (WEAR)
+    // --- path 3, E3: the arm, from the counterweight's tail through the pivot
+    // to the headshell, one outline of the bar's top and side. LIFT: parked
+    // higher the sooner it lifts; WARP: the head rides the disc as it turns.
     {
-        const Pt p = on_circle(33 * 16, rho + 12000, 0);
-        const Pt q = on_circle(33 * 16, rho + 12000 - 1024, 0);
-        put(frame, art::label_mark, p.x, p.y, unit, 6, direction(p.x - q.x, p.y - q.y));
-        static const i16 sr[6] = {1250, 1010, 1180, 900, 1300, 1080};
-        static const i32 sa[6] = {2000, 21000, 33000, 45000, 54000, 11000};
-        static const i16 dr[8] = {1270, 1100, 960, 1210, 1350, 880, 1160, 1020};
-        static const i32 da_[8] = {7000, 15000, 26000, 30500, 40000, 48000, 60000, 51000};
-        const i32 wear = t[rec::WEAR];
-        for (u32 k = 0; k < 6; ++k) {
-            const i32 s = ((wear - static_cast<i32>(k) * 150) * 8) / 200;
-            const Pt a = on_circle(sr[k], rho + sa[k], 0), b = on_circle(sr[k], rho + sa[k] - 1024, 0);
-            put_shaded(frame, art::scratch_0 + k, a.x, a.y, clampi(s, 0, 7), direction(a.x - b.x, a.y - b.y));
-        }
-        for (u32 k = 0; k < 8; ++k) {
-            const i32 s = ((wear - 60 - static_cast<i32>(k) * 110) * 8) / 160;
-            const Pt a = on_circle(dr[k], rho + da_[k], 0);
-            put_shaded(frame, art::speck_0 + k, a.x, a.y, clampi(s, 0, 7));
-        }
-    }
-
-    // --- path 3: the tonearm, from the counterweight's stub through the pivot
-    // to the headshell, its finger lift and the stylus: drawn at half size
-    // about the arm's middle. It rides the warp and lifts at the hit's end.
-    Pt pivot, tip;
-    {
-        const i32 sx = (rad * cs(theta)) >> 14, sy = (rad * sn(theta)) >> 14;   // the stylus, mm Q4
-        const i32 dx = sx - art::pivot_x, dy = sy - art::pivot_y;
-        // the arm's unit direction in the plane, Q14 (its length is the arm's, ARM)
-        const i32 ux = (dx * 16384) / art::arm, uy = (dy * 16384) / art::arm;
-        const i32 lifted = ((lift * 6 * 16) >> 10) + ride;   // mm Q4 at the stylus
-        // a point along the arm (d mm Q4 from the pivot, s across it) at the arm's height
-        struct A {
-            i32 ux, uy, lifted;
-            Pt at(i32 d, i32 s, i32 z) const {
-                const i32 x = art::pivot_x + ((ux * d - uy * s) >> 14), y = art::pivot_y + ((uy * d + ux * s) >> 14);
-                return project(x, y, z + (lifted * d) / art::arm);
+        const i32 ux = ((sx - art::pivot_x) * 16384) / art::arm, uy = ((sy - art::pivot_y) * 16384) / art::arm;   // Q14
+        i32 nx = -uy, ny = ux;   // across the arm, toward the viewer
+        if (nx + ny < 0) { nx = -nx; ny = -ny; }
+        const i32 warp = (64 * rec::warp_share(r[rec::WARP])) >> 16;   // the disc's rise at the stylus, up to 4 px (Q4)
+        const i32 rest = 24 + ((112 * (1024 - t[rec::LIFT])) >> 10) + ((warp * (16384 + cs(0))) >> 15);
+        const i32 ride = (warp * (16384 + cs(2 * rho))) >> 15;
+        const i32 h = rest + (((ride - rest) * down) >> 10);   // the needle's tip over the record (Q4)
+        const i32 zh = art::z_top + h + art::stylus + art::head_d;   // the arm's top at the head
+        // a point of the arm: a along it from the pivot, b across, d under its top (Q4)
+        struct Arm {
+            i32 ux, uy, nx, ny, zh;
+            Pt at(i32 a, i32 b, i32 d) const {
+                const i32 x = art::pivot_x + ((a * ux + b * nx) >> 14), y = art::pivot_y + ((a * uy + b * ny) >> 14);
+                const i32 z = (a > 0 ? art::pivot_z + ((zh - art::pivot_z) * a) / art::arm : art::pivot_z) - d;
+                return project(x, y, z);
             }
-        } arm = {ux, uy, lifted};
-        pivot = project(art::pivot_x, art::pivot_y, art::pivot_z);
-        tip = arm.at(art::arm, 0, 0);
-        // the headshell turns 22 degrees inward from the tube (the offset)
-        const i32 hx = (ux * 15191 + uy * 6137) >> 14, hy = (uy * 15191 - ux * 6137) >> 14;
-        struct H {
-            i32 hx, hy;
-            const A* a;
-            Pt at(i32 d, i32 s, i32 z) const {
-                // d along the headshell from the stylus (negative: back), s across
-                const i32 x = ((hx * d - hy * s) >> 14), y = ((hy * d + hx * s) >> 14);
-                const i32 ax_ = a->ux, ay_ = a->uy;
-                // back into the arm's own frame, so A::at adds its lift
-                const i32 along = ((ax_ * x + ay_ * y) >> 14), across = ((-ay_ * x + ax_ * y) >> 14);
-                return a->at(art::arm + along, across, z);
-            }
-        } head = {hx, hy, &arm};
-        Pt pts[64];
+        } arm = {ux, uy, nx, ny, zh};
+        // the corners: the far top edge from the tail to the head, across the
+        // head's end, down its side, the near side's foot back to the tail
+        const i32 hw = art::arm_w / 2, len = art::arm, T = -art::tail, d = art::arm_t;
+        const i32 ca[8] = {T, 0, len, len, len, 0, T, T}, cb[8] = {-hw, -hw, -hw, hw, hw, hw, hw, hw}, cd[8] = {0, 0, 0, 0, d, d, d, 0};
+        Pt raw[64];
         u32 n = 0;
-        const i32 tube_z = art::pivot_z;
-        // The tube runs from the pivot to the headshell's root, 23 mm behind
-        // the stylus along the headshell and so 8.6 mm to the outer side of
-        // the pivot-to-stylus line: in the arm's frame its direction is
-        // (16355, 1013) Q14 and it is 2233 (mm Q4) long.
-        struct T {
-            const A* a;
-            Pt at(i32 q, i32 z) const { return a->at((q * 16355) >> 14, (q * 1013) >> 14, z); }
-        } tube = {&arm};
-        const i32 root = 2233;
-        const Pt t0 = tube.at(-art::stub, tube_z), t1 = tube.at(root, tube_z - 48);
-        const Turn d = direction(t1.x - t0.x, t1.y - t0.y);
-        const i32 ox = (-d.sin * 1434) >> 10, oy = (d.cos * 1434) >> 10;   // 1.4 px across, Q10
-        // left edge: from the stub's end to the headshell, 39 points; the tube
-        // falls 3 mm from the pivot to the headshell
-        for (u32 k = 0; k < 39; ++k) {
-            const i32 at = -art::stub + ((root + art::stub) * static_cast<i32>(k)) / 38;
-            const Pt c = tube.at(at, tube_z - (at > 0 ? (at * 48) / root : 0));
-            pts[n].x = c.x + ox; pts[n].y = c.y + oy; ++n;
-        }
-        // the headshell: a plate from its root to the stylus, its finger lift
-        // curling up from its outer side; traced from the side the left edge
-        // ends on
-        static const i16 hd[14] = {-368, -256, -112, -88, -64, -24, 0, -24, 48, 96, 96, 48, -256, -368};
-        static const i16 hs[14] = {88, 104, 120, 240, 340, 352, 300, 140, 120, 64, -64, -120, -104, -88};
-        static const i16 hz[14] = {112, 112, 112, 116, 122, 124, 120, 112, 112, 112, 112, 112, 112, 112};
-        const Pt first = head.at(hd[0], hs[0], hz[0]), last = head.at(hd[13], -hs[13] * 0 + hs[13], hz[13]);
-        const i32 ex = pts[n - 1].x, ey = pts[n - 1].y;
-        const bool forward = iabs(first.x - ex) + iabs(first.y - ey) <= iabs(last.x - ex) + iabs(last.y - ey);
-        for (u32 k = 0; k < 14; ++k) {
-            const u32 j = forward ? k : 13 - k;
-            pts[n] = head.at(hd[j], hs[j], hz[j]);
-            ++n;
-        }
-        // right edge back to the stub's end, 9 points
-        for (u32 k = 0; k < 9; ++k) {
-            const i32 at = root - ((root + art::stub) * static_cast<i32>(k)) / 8;
-            const Pt c = tube.at(at, tube_z - (at > 0 ? (at * 48) / root : 0));
-            pts[n].x = c.x - ox; pts[n].y = c.y - oy; ++n;
-        }
-        // the stub's round end
-        const Pt e = tube.at(-art::stub - 24, tube_z);
-        pts[n].x = e.x - ox / 2; pts[n].y = e.y - oy / 2; ++n;
-        pts[n].x = e.x + ox / 2; pts[n].y = e.y + oy / 2; ++n;
-        // rotate so the long left edge closes the outline
-        const Pt mid = {(t0.x + tip.x) / 2, (t0.y + tip.y) / 2};
-        u32 key = 0xc2b2ae35u ^ static_cast<u32>(theta * 131 + lifted * 7);
-        if (!key) key = 1;
-        if (frame.paths[3].key != key) {
-            for (u32 i = 0; i < 64; ++i) {
-                const Pt& p = pts[(i + 3) & 63];
-                frame.paths[3].points[i].x = (p.x - mid.x) / 2;
-                frame.paths[3].points[i].y = (p.y - mid.y) / 2;
+        for (u32 k = 0; k < 8; ++k) {
+            const u32 j = (k + 1) & 7;
+            for (u32 i = 0; i < runs[k]; ++i) {
+                const i32 q = static_cast<i32>(i), s = static_cast<i32>(runs[k]);
+                // runs of 1, 7 and 23 points: steps along the edge by a constant divide
+                const i32 a = ca[k] + (s == 23 ? ((ca[j] - ca[k]) * q) / 23 : s == 7 ? ((ca[j] - ca[k]) * q) / 7 : 0);
+                const i32 b = cb[k] + (s == 23 ? ((cb[j] - cb[k]) * q) / 23 : s == 7 ? ((cb[j] - cb[k]) * q) / 7 : 0);
+                const i32 dd = cd[k] + (s == 23 ? ((cd[j] - cd[k]) * q) / 23 : s == 7 ? ((cd[j] - cd[k]) * q) / 7 : 0);
+                raw[n++] = arm.at(a, b, dd);
             }
-            frame.paths[3].key = key;
         }
-        place(frame, 3, mid.x, mid.y, 2 * unit, 15, stroke);
-        put(frame, art::tip, tip.x, tip.y, unit, lift > 512 ? 5 : 8, upright);
-        // WEIGHT: the counterweight slides along its stub, nearer the pivot for a heavier arm
-        const i32 w = 260 + (((800 - 260) * (1024 - t[rec::WEIGHT])) >> 10);   // mm Q4 behind the pivot
-        const Pt c = tube.at(-w, tube_z);
-        put(frame, art::weight, c.x, c.y, unit, 6, d);
-        put(frame, art::weight_ring, c.x, c.y, unit, 4, d);
+        // about the middle of tail-end and head; starting along the tail's top,
+        // so the closing edge is a long one
+        const Pt t0 = arm.at(T, 0, 0), t1 = arm.at(len, 0, 0);
+        const Pt mid = {(t0.x + t1.x) >> 1, (t0.y + t1.y) >> 1};
+        for (u32 i = 0; i < 64; ++i) {
+            pts[i].x = raw[(i + 3) & 63].x - mid.x;
+            pts[i].y = raw[(i + 3) & 63].y - mid.y;
+        }
+        reshape(frame, 3, pts, mid, arm_shade);
+        // the headshell rides the arm's end, turned with it; the needle hangs under it
+        const Pt hp = arm.at(len, 0, art::head_d);
+        const Turn dir = direction(((ux - uy) * 14189) >> 14, (ux + uy) >> 1);
+        const Turn by = {(dir.cos * art::head_cos + dir.sin * art::head_sin) >> 10, (dir.sin * art::head_cos - dir.cos * art::head_sin) >> 10};
+        put(frame, art::head, hp, unit, by);
+        put(frame, art::needle, hp);
+        // E4, WEIGHT: the counterweight slides along the tail, nearer the pivot the heavier
+        const i32 w = 304 - ((176 * t[rec::WEIGHT]) >> 10);
+        const Pt cw = arm.at(-w, 0, 0);
+        put(frame, art::weight_side, cw);
+        put(frame, art::weight_top, cw);
     }
-
-    // --- the cue lever: LIFT, raised for an early lift, down for a long play
+    // --- E4 page 2, DRAG: the dust brush comes straight down its post onto the record
     {
-        const Pt c = project(art::cue_x, art::cue_y, art::cue_z + 8 * 16);
-        const i32 deg = -620 + ((t[rec::LIFT] * 560) >> 10) - ((lift * 200) >> 10);   // tenths of a degree
-        put(frame, art::cue_lever, c.x, c.y, unit, 6, rotation(deg));
-        put(frame, art::cue_knob, c.x, c.y, unit, 7, rotation(deg));
-    }
-    // --- the speed selector: SPEED, its lever from 33 through 45 to 78
-    {
-        const Pt c = project(art::speed_x, art::speed_y, art::speed_z);
-        const i32 deg = -900 + ((r[rec::SPEED] - 64) * 7);
-        put(frame, art::speed_lever, c.x, c.y, unit, 8, rotation(deg));
-        put(frame, art::speed_hub, c.x, c.y, unit, 6, upright);
-    }
-    // --- the dust brush: DRAG lowers it onto the record and bends its bristles
-    {
-        const Pt pv = project(art::brush_x, art::brush_y, art::brush_z);
-        const i32 drag = t[rec::DRAG];
-        const i32 down = drag < 200 ? drag * 5 : 1024;          // Q10: touching from a fifth of the way
-        const i32 hz_ = ((1024 - down) * 11 * 16) >> 10;        // its height over the record, mm Q4
-        const Pt h = project(art::brush_at_x, art::brush_at_y, hz_ + 6 * 16);
-        const i32 ex = h.x - pv.x, ey = h.y - pv.y;
-        const Turn d = direction(ex, ey);
-        // the arm's length on screen against its 60 px drawing
-        const i32 len = ((iabs(ex) > iabs(ey) ? iabs(ex) + (iabs(ey) >> 2) : iabs(ey) + (iabs(ex) >> 2)));
-        const i32 sc = ratio(len, 60 << 10);
-        put(frame, art::brush_arm, pv.x, pv.y, sc, 6, d);
-        put(frame, art::brush_head, h.x, h.y, unit, 6, upright);
-        const i32 bend = drag > 200 ? ((drag - 200) * 380) / 824 : 0;   // tenths of a degree
-        put(frame, art::brush_tuft, h.x, h.y + 3 * unit, unit, 5, rotation(bend));
+        Pt b = project(art::post_x, art::post_y, art::brush_z);
+        b.y += ((art::brush_drop * rec::drag_share(r[rec::DRAG])) >> 16) * 64;
+        put(frame, art::brush_side, b);
+        put(frame, art::brush_arm, b);
+        put(frame, art::brush_top, b);
     }
 
     // --- the header: both rows, the edited one bright; while Shift is held
@@ -517,13 +432,13 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
             else copy(sends[k], cap, "TRK");
         }
         pad_text(tune_, 0, tune);
-        pad_text(tone_, 1, tone);
+        pad_text(tone_, 1, clampi(input.pad[1], -8, 7));
         static const char* const shift_titles[2][4] = {{"MACHINE", "CHOKE", "PAN", "LEVEL"}, {"TUNE", "TONE", "FX I", "FX II"}};
         const char* const shift_values[2][4] = {{names[m], chokes[input.choices[1] & 3u], pan, level}, {tune_, tone_, sends[0], sends[1]}};
         for (u32 line = 0; line < 2; ++line)
-            for (u32 c = 0; c < 4; ++c) {
-                titles[4 * line + c] = shift_titles[line][c];
-                copy(values[4 * line + c], header_capacity, shift_values[line][c]);
+            for (u32 c4 = 0; c4 < 4; ++c4) {
+                titles[4 * line + c4] = shift_titles[line][c4];
+                copy(values[4 * line + c4], header_capacity, shift_values[line][c4]);
             }
     }
     page_header(state.header, input, frame, titles, values, art::header_node);

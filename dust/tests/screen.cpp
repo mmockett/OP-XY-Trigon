@@ -20,7 +20,7 @@
 namespace {
 using namespace opxy::draw;
 typedef dust::Frame F;
-const opxy::i32 apart = unit / 8;   // path units (Q10): the outlines are drawn at twice this on screen
+const opxy::i32 apart = unit / 8;   // path units (Q10): the outlines are drawn at unit scale, so 1/8 px
 int failures = 0;
 const unsigned models = dust::kit::models;
 unsigned char defaults(unsigned m, unsigned s) { return dust::kit::model[m].defaults[s]; }
