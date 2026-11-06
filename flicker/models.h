@@ -469,35 +469,39 @@ FLICKER_APART void draw_strokes(Voice& v, i32* x) {
     const i32 de = v.env[0].next(e0);
     const i32 f = film(v.k[0], v.fm), q = v.k[1], bk = v.k[9];
     i32 burst = v.k[8], next = v.k[6], struck = v.k[7], fs = v.k[10] ? v.k[10] : f;
+    // (the voice's settings in locals: the block's stores could reach them)
+    const i32 k2 = v.k[2], k3 = v.k[3], k4 = v.k[4], k5 = v.k[5];
+    i32 k11 = v.k[11];
     Svf sv = v.sv[0];
     u32 seed = v.seed;
     i32 e = e0;
     for (unsigned i = 0; i < frames; ++i) {
-        if (struck <= v.k[2] && next <= 0) {
+        if (struck <= k2 && next <= 0) {
             // a stroke: louder or softer, sooner or later and higher or lower by SCATTER
             const i32 r = static_cast<i32>(rng(seed) >> 17);   // 0..32767
-            const i32 level = struck == v.k[2] && struck ? v.k[3] : one;
-            burst = multiply(level, one - multiply(mul16(v.k[5], r * 2) * 16384, Q31(0.5)));
+            const i32 level = struck == k2 && struck ? k3 : one;
+            burst = multiply(level, one - multiply(mul16(k5, r * 2) * 16384, Q31(0.5)));
             ++struck;
             // scattered strokes come further apart and less evenly, the later
             // ones later still: a loose clap, a crowd
-            next = v.k[4] + mul16(mul16(v.k[4], v.k[5]), r * 3 + struck * 32768);
+            next = k4 + mul16(mul16(k4, k5), r * 3 + struck * 32768);
             if (next < 32) next = 32;
-            const i32 tone = mul16(v.k[5], (static_cast<i32>(seed >> 17) - 16384) * 2);   // -1..1 by SCATTER, Q16
+            const i32 tone = mul16(k5, (static_cast<i32>(seed >> 17) - 16384) * 2);   // -1..1 by SCATTER, Q16
             fs = clamp(opxy::q31::add(f, multiply(f, tone * 13000)), 1, one);   // up to 0.8 either way, held under one
         }
         --next;
         const i32 n = noise(seed) >> 3;
         // a scattered smear is many hands: its level jumps every 3 ms
-        if (!(i & 127u) && v.k[5]) v.k[11] = one - multiply(mul16(v.k[5], static_cast<i32>(seed >> 16)) * 32767, Q31(0.85));
-        const i32 smear = v.k[5] ? multiply(e, v.k[11]) : e;
-        const i32 y = sv.band(multiply(n, burst) * 2 + multiply(n, smear), struck > v.k[2] && next < -400 ? f : fs, q);
+        if (!(i & 127u) && k5) k11 = one - multiply(mul16(k5, static_cast<i32>(seed >> 16)) * 32767, Q31(0.85));
+        const i32 smear = k5 ? multiply(e, k11) : e;
+        const i32 y = sv.band(multiply(n, burst) * 2 + multiply(n, smear), struck > k2 && next < -400 ? f : fs, q);
         x[i] = y;
         burst = multiply(burst, bk);
         e += de;
     }
     v.k[6] = next;
     v.k[7] = struck;
+    v.k[11] = k11;
     v.k[8] = burst;
     v.k[10] = fs;
     v.sv[0] = sv;
