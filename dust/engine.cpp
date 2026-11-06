@@ -434,7 +434,9 @@ inline void light_block(Voice& v, i32* y) {
         const i32 hi = y[i] - sp;
         const i32 h = clamp(hi, -th, th), lo = clamp(sp, -tl, tl);
         // the highs it loses, it splatters: noise as loud as their excess
-        y[i] = lo + h + multiply(noise(seed), imin(absolute(hi - h), U) << 2);
+        // (at most U, taken by a mask, not a branch)
+        const i32 over = absolute(hi - h) - U;
+        y[i] = lo + h + multiply(noise(seed), (U + (over & (over >> 31))) << 2);
     }
     v.w_s = sp;
     v.w_seed = seed;
