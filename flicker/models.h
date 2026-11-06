@@ -419,6 +419,21 @@ FLICKER_APART void draw_scratch(Voice& v, i32* x) {
     crack(v, x);
     v.run = v.env[1].g > v.env[0].g ? v.env[1].g : v.env[0].g;
 }
+// RING's two drawn rings: the shape at pa and a sine at pb, each gliding.
+template <bool Tall> inline void ring_draw(i32* x, u32& pa, u32& pb, u32 a, u32 b, i32 da, i32 db, i32 bend, i32 height,
+                                           i32 e0, i32 de0, i32 e1, i32 de1) {
+    u32 p = pa, q = pb;
+    for (unsigned i = 0; i < frames; ++i) {
+        p += a; q += b;
+        a = static_cast<u32>(static_cast<i32>(a) + da);
+        b = static_cast<u32>(static_cast<i32>(b) + db);
+        x[i] = div2k(multiply(drawn_as<Tall>(p, bend, height), e0), 2) + multiply(sine(q) >> 3, e1);
+        e0 += de0;
+        e1 += de1;
+    }
+    pa = p;
+    pb = q;
+}
 FLICKER_APART void draw_ring(Voice& v, i32* x) {
     i32 e0 = 0;
     i32 e1;
@@ -433,19 +448,13 @@ FLICKER_APART void draw_ring(Voice& v, i32* x) {
     const i32 bk = v.k[7], f = v.k[8], q = v.k[9];
     Svf sv = v.sv[0];
     u32 seed = v.seed;
-    for (unsigned i = 0; i < frames; ++i) {
-        pa += a; pb += b;
-        a = static_cast<u32>(static_cast<i32>(a) + da);
-        b = static_cast<u32>(static_cast<i32>(b) + db);
-        i32 y = multiply(drawn(pa, bend, height), e0) / 4 + multiply(sine(pb) >> 3, e1);
-        if (burst) {
-            y += multiply(sv.band(multiply(noise(seed) >> 3, burst), f, q), Q31(0.9));
-            burst = multiply(burst, bk);
-            if (burst < (one >> 12)) burst = 0;   // gone 72 dB down
-        }
-        x[i] = y;
-        e0 += de0;
-        e1 += de1;
+    if (height <= 256) ring_draw<false>(x, pa, pb, a, b, da, db, bend, height, e0, de0, e1, de1);
+    else ring_draw<true>(x, pa, pb, a, b, da, db, bend, height, e0, de0, e1, de1);
+    // the slap's burst, while it lasts
+    for (unsigned i = 0; i < frames && burst; ++i) {
+        x[i] += multiply(sv.band(multiply(noise(seed) >> 3, burst), f, q), Q31(0.9));
+        burst = multiply(burst, bk);
+        if (burst < (one >> 12)) burst = 0;   // gone 72 dB down
     }
     v.k[6] = burst;
     v.sv[0] = sv;
