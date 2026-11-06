@@ -418,163 +418,160 @@ inline i32 room_add_peak(const i32* ry, i32* x) {
     }
     return peak;
 }
+// The player, after the chain, in a few short passes over the block.
+// WEIGHT, light: the stylus cannot hold the groove's loudest swings: the
+// highs over its grip clip and splatter, the loud lows break up.
 inline void light_block(Voice& v, i32* y) {
-    // WEIGHT, light: the stylus cannot hold the groove's loudest swings:
-    // the highs over its grip clip and splatter, the loud lows break up
-    if (v.light) {
-        v.work |= W_LIGHT;
-        const i32 th = v.w_thr, tl = v.w_low_thr, k = v.w_ks;
-        i32 sp = v.w_s;
-        u32 seed = v.w_seed;
-        for (unsigned i = 0; i < frames; ++i) {
-            sp += multiply(y[i] - sp, k);
-            const i32 hi = y[i] - sp;
-            const i32 h = clamp(hi, -th, th), lo = clamp(sp, -tl, tl);
-            // the highs it loses, it splatters: noise as loud as their excess
-            y[i] = lo + h + multiply(noise(seed), imin(absolute(hi - h), U) << 2);
-        }
-        v.w_s = sp;
-        v.w_seed = seed;
+    v.work |= W_LIGHT;
+    const i32 th = v.w_thr, tl = v.w_low_thr, k = v.w_ks;
+    i32 sp = v.w_s;
+    u32 seed = v.w_seed;
+    for (unsigned i = 0; i < frames; ++i) {
+        sp += multiply(y[i] - sp, k);
+        const i32 hi = y[i] - sp;
+        const i32 h = clamp(hi, -th, th), lo = clamp(sp, -tl, tl);
+        // the highs it loses, it splatters: noise as loud as their excess
+        y[i] = lo + h + multiply(noise(seed), imin(absolute(hi - h), U) << 2);
     }
+    v.w_s = sp;
+    v.w_seed = seed;
 }
-inline void heavy_block(Voice& v, i32* y) {
-    // WEIGHT, heavy: rounder, the low end fuller
-    if (v.heavy) {
-        v.work |= W_HEAVY;
-        const i32 kb = v.w_kl, h = multiply(v.heavy, Q31(0.99)), c = multiply(v.heavy, Q31(0.6));
-        const u32 k = v.round_k;
-        const i32 lim = static_cast<i32>(0x7fffffffu >> k);
-        // the darkening's second pole (a worn copy's too, the lower of the two)
-        const i32 kd = v.wear ? imin(v.w_kd, v.k_dull) : v.w_kd;
-        i32 lo = v.w_lo, d = v.w_d2;
-        for (unsigned i = 0; i < frames; ++i) {
-            d += multiply(y[i] - d, kd);
+// WEIGHT, heavy: rounder, darker, the low end fuller; WEAR: a dulled top and
+// the worn grooves' fuzz on loud passages. One darkening pole for both (the
+// lower of the two).
+template <bool Heavy, bool Wear> inline void dark_block(Voice& v, i32* y) {
+    const i32 kb = v.w_kl, h = multiply(v.heavy, Q31(0.99)), c = multiply(v.heavy, Q31(0.6)), t3 = v.worn;
+    const u32 k = v.round_k;
+    const i32 lim = static_cast<i32>(0x7fffffffu >> k);
+    const i32 kd = Heavy ? (Wear ? imin(v.w_kd, v.k_dull) : v.w_kd) : v.k_dull;
+    i32 lo = v.w_lo, d = v.w_d2;
+    for (unsigned i = 0; i < frames; ++i) {
+        d += multiply(y[i] - d, kd);
+        i32 f = d;
+        if (Heavy) {
             lo += multiply(d - lo, kb);
-            const i32 f = d + multiply(lo, h);
+            f = d + multiply(lo, h);
             // round the peaks: f - c f^3, z = f against the ceiling
             const i32 z = shl(clamp(f, -lim, lim), k);
-            y[i] = f - (multiply(multiply(multiply(z, z), z), c) >> k);
+            f -= multiply(multiply(multiply(z, z), z), c) >> k;
         }
-        v.w_lo = lo;
-        v.w_d2 = d;
+        if (Wear) {
+            const i32 w = clamp(f, -t3, t3);
+            f = w + ((f - w) >> 2);
+        }
+        y[i] = f;
     }
+    v.w_lo = lo;
+    v.w_d2 = d;
 }
-inline void wear_block(Voice& v, i32* y) {
-    // WEAR: crackle, hiss, rumble, the worn grooves' fuzz on loud passages
+// The surface, from one noise: WEAR's hiss (a first difference of it, the
+// top end) and rumble, and DRAG's brush (the noise under 1 kHz); the
+// difference also into nd for the landing's scratch.
+template <bool Scratch> inline void surface_block(Voice& v, i32* y, i32* nd, i32 hs, i32 rm, i32 dr, i32 bb) {
+    i32 last = v.hiss, bl = v.brush_l;
+    u32 seed = v.seed;
+    for (unsigned i = 0; i < frames; ++i) {
+        const i32 n = noise(seed);
+        const i32 diff = n - last;
+        last = n;
+        bl += multiply(n - bl, Q31(0.15));
+        y[i] = add(y[i] + multiply(diff, hs) + rm, multiply(bl, bb));
+        rm += dr;
+        if (Scratch) nd[i] = diff;
+    }
+    v.hiss = last;
+    v.brush_l = bl;
+    v.seed = seed;
+}
+// TONE: the player's tone control, a shelf at 2 kHz.
+inline void tone_block(Voice& v, i32* y) {
+    v.work |= W_TONE;
+    const i32 hi = v.tone_hi, lo = v.tone_lo, k = v.tone_k;
+    i32 l1 = v.tone_l;
+    for (unsigned i = 0; i < frames; ++i) {
+        l1 += multiply(y[i] - l1, k);
+        y[i] = shl(multiply(l1, lo) + multiply(y[i] - l1, hi), 3);
+    }
+    v.tone_l = l1;
+}
+// A block with any of the player's stages, or the needle moving: the room
+// into the record, the chain, the player, the level and the needle; the
+// output's peak.
+inline i32 play_out(Voice& v, i32* x, const i32* ry, bool room, opxy::Output output, i32 og, i32 step, i32 gain) {
+    const Chain c = chain_gains(v, room ? room_add_peak(ry, x) : peak_of(x));
+    if (c.valve) chain_run<true, false>(v, c, x, output, 0);
+    else chain_run<false, false>(v, c, x, output, 0);
+    i32* y = output;
+    if (v.light) light_block(v, y);
+    if (v.heavy) {
+        v.work |= W_HEAVY;
+        if (v.wear) dark_block<true, true>(v, y);
+        else dark_block<true, false>(v, y);
+    } else if (v.wear) {
+        dark_block<false, true>(v, y);
+    }
+    // WEAR's rumble: a slow random walk, a value a block, ramped
+    i32 hs = 0, rm = 0, dr = 0;
     if (v.wear) {
         v.work |= W_WEAR;
-        const i32 t3 = v.worn, hs = v.n_hiss;
-        // the rumble: a slow random walk, a value a block, ramped
-        const i32 r0 = v.rumble;
+        hs = v.n_hiss;
+        rm = v.rumble;
         v.rumble_to += multiply(multiply(noise(v.seed), v.n_rumble) - v.rumble_to, Q31(0.225));
         v.rumble = v.rumble_to;
-        i32 rm = r0;
-        const i32 dr = (v.rumble - r0) >> 6;
-        i32 last = v.hiss, d = v.w_d2;
-        // the darkening's second pole, unless a heavy arm's loop has run it
-        const i32 kd = v.heavy ? one : v.k_dull;
-        u32 seed = v.seed;
-        for (unsigned i = 0; i < frames; ++i) {
-            d += multiply(y[i] - d, kd);
-            const i32 s = clamp(d, -t3, t3);
-            // hiss: noise less the noise before it, a first difference (the top end)
-            const i32 n = noise(seed);
-            y[i] = s + ((d - s) >> 2) + multiply(n - last, hs) + rm;
-            last = n;
-            rm += dr;
-        }
-        v.hiss = last;
-        if (!v.heavy) v.w_d2 = d;
-        // a crackle: most small, a few loud, at a random sample of the block
-        if (rand32(seed) < v.crackle_p) {
-            const i32 a = static_cast<i32>(rand32(seed)) >> 2;
-            const i32 c = multiply(multiply(a, absolute(a) << 1), v.n_crackle);
-            const u32 at = rand32(seed) >> 26;
-            y[at] = add(y[at], c);
-            if (at + 1 < frames) y[at + 1] = add(y[at + 1], -(c >> 1));
-        }
-        v.seed = seed;
+        dr = (v.rumble - rm) >> 6;
     }
-}
-inline void tone_block(Voice& v, i32* y) {
-    // TONE: the player's tone control, a shelf at 2 kHz
-    if (v.tone) {
-        v.work |= W_TONE;
-        const i32 hi = v.tone_hi, lo = v.tone_lo, k = v.tone_k;
-        i32 l1 = v.tone_l;
-        for (unsigned i = 0; i < frames; ++i) {
-            l1 += multiply(y[i] - l1, k);
-            y[i] = shl(multiply(l1, lo) + multiply(y[i] - l1, hi), 3);
-        }
-        v.tone_l = l1;
-    }
-}
-inline void brush_block(Voice& v, i32* y) {
     // DRAG: the brush's bristles on the vinyl (not while the strike sounds:
     // a few milliseconds of them under a transient tens of dB louder)
-    if (v.brush && !(v.work & W_STRIKE)) {
-        v.work |= W_BRUSH;
-        const i32 b = multiply(v.brush, one - v.drag_x);
-        i32 l = v.brush_l;
-        u32 seed = v.w_seed;
-        for (unsigned i = 0; i < frames; ++i) { l += multiply(noise(seed) - l, Q31(0.15)); y[i] = add(y[i], multiply(l, b)); }
-        v.brush_l = l;
-        v.w_seed = seed;
+    const i32 bb = v.brush && !(v.work & W_STRIKE) ? multiply(v.brush, one - v.drag_x) : 0;
+    if (bb) v.work |= W_BRUSH;
+    const bool landing = (step || og != one) && v.land_len;
+    i32 nd[frames];
+    if (landing) surface_block<true>(v, y, nd, hs, rm, dr, bb);
+    else if (v.wear || bb) surface_block<false>(v, y, nd, hs, rm, dr, bb);
+    // WEAR: a crackle, most small, a few loud, at a random sample of the block
+    if (v.wear && rand32(v.seed) < v.crackle_p) {
+        u32 seed = v.seed;
+        const i32 a = static_cast<i32>(rand32(seed)) >> 2;
+        const i32 cr = multiply(multiply(a, absolute(a) << 1), v.n_crackle);
+        const u32 at = rand32(seed) >> 26;
+        y[at] = add(y[at], cr);
+        if (at + 1 < frames) y[at + 1] = add(y[at + 1], -(cr >> 1));
+        v.seed = seed;
     }
-}
-inline void play_block(Voice& v, const i32* x, i32* y) {
-    chain_block(v, x, y);
-    light_block(v, y);
-    heavy_block(v, y);
-    wear_block(v, y);
-    tone_block(v, y);
-    brush_block(v, y);
-}
-
-// A block with the player's stages or the needle moving: the room into the
-// record, the chain, the player, then the level, faded by the needle; the
-// output's peak.
-inline i32 play_out(Voice& voice, i32* x, const i32* ry, bool room, opxy::Output output, i32 og, i32 step, i32 gain) {
+    if (v.tone) tone_block(v, y);
+    // the level, and the needle: landing late fades the hit in (the square
+    // of the ramp, slowly at first) as the stylus scratches into the groove;
+    // lifting fades all of it out
     i32 most = 0;
-    if (room) room_add(ry, x);
-    play_block(voice, x, output);
     if (step || og != one) {
-        voice.work |= W_NEEDLE;
+        v.work |= W_NEEDLE;
         const i32 to = clamp(add(og, clamp(step, -(one >> 6), one >> 6) * 64), 0, one);
-        voice.out_g = to;
-        // landing, the hit comes up slowly at first (the square of the ramp)
-        if (voice.land_len) { og = multiply(og, og); }
-        const i32 to_ = voice.land_len ? multiply(to, to) : to;
+        v.out_g = to;
+        if (v.land_len) og = multiply(og, og);
+        const i32 to_ = v.land_len ? multiply(to, to) : to;
         const i32 d = (to_ - og) >> 6;
-        if (voice.land_len) {
-            // landing: the stylus settles into the groove, scratching as it comes in
-            u32 seed = voice.w_seed;
-            i32 last = voice.drop;
-            const i32 lvl = voice.land_noise;
+        if (landing) {
+            const i32 lvl = v.land_noise;
             for (unsigned i = 0; i < frames; ++i) {
-                const i32 n = noise(seed);
-                const i32 y = add(shl(clamp(multiply(multiply(output[i], og), gain), -(one >> 6), one >> 6), 6), multiply(n - last, multiply(one - og, lvl)));
-                last = n;
+                const i32 o = add(shl(clamp(multiply(multiply(y[i], og), gain), -(one >> 6), one >> 6), 6), multiply(nd[i], multiply(one - og, lvl)));
                 og += d;
-                output[i] = y;
-                most = imax(most, absolute(y));
+                output[i] = o;
+                most = imax(most, absolute(o));
             }
-            voice.w_seed = seed;
-            voice.drop = last;
         } else {
             for (unsigned i = 0; i < frames; ++i) {
-                const i32 y = shl(clamp(multiply(multiply(output[i], og), gain), -(one >> 6), one >> 6), 6);
+                const i32 o = shl(clamp(multiply(multiply(y[i], og), gain), -(one >> 6), one >> 6), 6);
                 og += d;
-                output[i] = y;
-                most = imax(most, absolute(y));
+                output[i] = o;
+                most = imax(most, absolute(o));
             }
         }
-        if (voice.land_len && to >= one) voice.land_len = 0;
+        if (v.land_len && to >= one) v.land_len = 0;
     } else {
         for (unsigned i = 0; i < frames; ++i) {
-            const i32 y = shl(clamp(multiply(output[i], gain), -(one >> 6), one >> 6), 6);
-            output[i] = y;
-            most = imax(most, absolute(y));
+            const i32 o = shl(clamp(multiply(y[i], gain), -(one >> 6), one >> 6), 6);
+            output[i] = o;
+            most = imax(most, absolute(o));
         }
     }
     return most;
