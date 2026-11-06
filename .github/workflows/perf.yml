@@ -147,13 +147,19 @@ jobs:
         run: python sdk.py toolchain fetch
       - name: Restore the Blackfin simulator
         id: sim
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/bfin-sim
           key: bfin-sim-gdb-15.2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('trigon/tools/perf/sim-build.sh') }}
       - name: The Blackfin simulator
         if: steps.sim.outputs.cache-hit != 'true'
         run: sh trigon/tools/perf/sim-build.sh "$RUNNER_TEMP/bfin-sim"
+      - name: Keep the Blackfin simulator
+        if: steps.sim.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/bfin-sim
+          key: ${{ steps.sim.outputs.cache-primary-key }}
       - name: Loops and counts, base against head
         working-directory: trigon
         run: |
