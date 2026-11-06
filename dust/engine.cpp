@@ -164,7 +164,8 @@ __attribute__((cold)) inline void begin(Voice& v, Shared& shared, opxy::Paramete
     // that moves faster than its force allows and breaks up (a slew limit
     // that falls an octave each third of the way); heavier, it rounds the
     // loud peaks, darkens, fills out the low end and rides the dust.
-    const i32 lw = rec::weight_log(r[rec::WEIGHT]);
+    // (76 is 2 g exactly, so the default tracks clean and runs neither stage)
+    const i32 lw = r[rec::WEIGHT] == rec::weight_neutral ? L(2.0) : rec::weight_log(r[rec::WEIGHT]);
     const i32 light0 = clamp((L(2.0) - lw) >> 1, 0, 65536), heavy0 = clamp(mul16(lw - L(2.0), Q16(65536.0 / 86633.0)), 0, 65536);
     // (each side heard soon after it leaves 2 g)
     const i32 light = light0 + mul16(light0 - mul16(light0, light0), Q16(0.3)), heavy = heavy0 + mul16(heavy0 - mul16(heavy0, heavy0), Q16(0.6));
