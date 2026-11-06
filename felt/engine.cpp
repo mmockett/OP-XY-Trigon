@@ -97,21 +97,33 @@ const i32 limit_log = L(0.8 * 1073741824.0);
 const i32 limit_top_beads = static_cast<i32>(0.65 * 1073741824.0);
 const i32 limit_log_beads = L(0.65 * 1073741824.0);
 const i32 limit_back = Q31(0.2516);   // 1 - exp(-64 / (0.005 * 44100)) a block
-inline void limit(Voice& voice, i32* y) {
+// most: the block's samples' magnitudes ORed together, at least the largest.
+// A sample's half is at most half of it, and a midpoint's estimate at most
+// (9 + 9 + 1 + 1) / 32 of it, so under 0.8 of the top neither can pass half
+// the top, and the block needs no search.
+inline void limit(Voice& voice, i32* y, i32 most) {
     const bool beads = voice.model == M::CHAIN;
     const i32 top = beads ? limit_top_beads : limit_top;
     const i32 half_top = top / 2;
     i32 peak = 0;     // halves
     u32 first = frames;
-    for (unsigned i = 0; i < frames; ++i) {
-        const i32 a = absolute(y[i] / 2);
-        if (a > peak) peak = a;
-        if (a > half_top && first == frames) first = i;
-    }
-    for (unsigned i = 1; i + 2 < frames; ++i) {
-        const i32 m = absolute((y[i] / 32 + y[i + 1] / 32) * 9 - (y[i - 1] / 32 + y[i + 2] / 32)) ;   // halves
-        if (m > peak) peak = m;
-        if (m > half_top && first > i) first = i;
+    if (most > (top / 5) * 4) {
+        for (unsigned i = 0; i < frames; ++i) {
+            const i32 a = absolute(y[i] / 2);
+            if (a > peak) peak = a;
+            if (a > half_top && first == frames) first = i;
+        }
+        // each sample over 32 once, carried along the block
+        i32 a = y[0] / 32, b = y[1] / 32, c = y[2] / 32;
+        for (unsigned i = 1; i + 2 < frames; ++i) {
+            const i32 d = y[i + 2] / 32;
+            const i32 m = absolute((b + c) * 9 - (a + d));   // halves
+            if (m > peak) peak = m;
+            if (m > half_top && first > i) first = i;
+            a = b;
+            b = c;
+            c = d;
+        }
     }
     i32 g = voice.lim;
     i32 target = g >= one ? one : g + mul(one - g, limit_back);
@@ -191,7 +203,7 @@ inline void render(Voice& voice, Shared& shared, u32, opxy::Output output, opxy:
         output[i] = y;
         most |= absolute(y);
     }
-    if (levels::limit[voice.model]) limit(voice, output);   // level: limiter
+    if (levels::limit[voice.model]) limit(voice, output, most);   // level: limiter
     // (tools/calibrate.py builds a copy without the lines marked "level:", to
     // measure the peaks the cap, the limiter and the knee take)
     if (most > half_scale - (half_scale >> 2)) for (unsigned i = 0; i < frames; ++i) output[i] = knee(output[i]);   // level: knee

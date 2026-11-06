@@ -29,7 +29,10 @@ const i32 lsr = L(44100.0);   // log2 of the sample rate
 // ------------------------------------------------------------ arithmetic
 inline i32 mul(i32 a, i32 b) { return opxy::q31::multiply(a, b); }
 inline i32 add(i32 a, i32 b) { return opxy::q31::add(a, b); }
-inline i32 clamp(i32 v, i32 lo, i32 hi) { return v < lo ? lo : v > hi ? hi : v; }
+inline i32 imin(i32 a, i32 b) { return a < b ? a : b; }
+inline i32 imax(i32 a, i32 b) { return a > b ? a : b; }
+// (lo <= hi; as MIN and MAX, never a branch)
+inline i32 clamp(i32 v, i32 lo, i32 hi) { return imax(imin(v, hi), lo); }
 inline i32 absolute(i32 v) { return v < 0 ? (v < -one ? one : -v) : v; }
 // a + (b - a) t for a Q16 unit t; |b - a| < 2^31.
 inline i32 mix(i32 a, i32 b, i32 t) { return a + mul(b - a, clamp(t, 0, 65535) * 32768); }
