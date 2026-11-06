@@ -25,26 +25,25 @@ for c in crt0 nocyc nobss; do
     out=$(perl -e 'alarm 15; exec @ARGV' "$RUN" "$W/$c.elf" 2>&1); rc=$?
     echo "probe $c: exit $rc, output: $(echo "$out" | head -4 | tr '\n' '|')"
 done
-# step by step: each adds one piece of the start-up code, prints a letter and stops
-steps="sp:SP.H = 0x07ff; SP.L = 0xfff0;
-fp:FP = 0;
-syscfg:R0 = SYSCFG; BITSET (R0, 1); SYSCFG = R0;
-csync:CSYNC;
-loop:P0 = 0; P1 = 64; .Lc: CC = P0 < P1 (IU); IF !CC JUMP .Ld; P0 += 4; JUMP .Lc; .Ld: NOP;
-store:P0.H = 0; P0.L = 0x3000; R0 = 0; [P0++] = R0; [P0] = R0;
-call:CALL f;
-spadd:SP += -12; SP += 12;"
-body=""
-echo "$steps" | while IFS= read -r line; do
+# branches and compares, one program each, a letter at the end
+progs="fwd:R0 = 0; CC = R0 < R0; IF !CC JUMP .Le; OUTC 0x78; .Le: NOP;
+backd:R0 = 2; .Lb: R0 += -1; CC = R0 == 0; IF !CC JUMP .Lb (BP);
+backd2:R0 = 2; .Lb: R0 += -1; CC = R0 == 0; IF !CC JUMP .Lb;
+pcmp:P0 = 0; P1 = 8; .Lb: P0 += 4; CC = P0 < P1 (IU); IF CC JUMP .Lb;
+dcmp:R0 = 0; R1 = 8; .Lb: R0 += 4; CC = R0 < R1 (IU); IF CC JUMP .Lb;
+jmps:R0 = 1; .Lb: CC = R0 == 0; IF CC JUMP .Le; R0 = 0; JUMP.S .Lb; .Le: NOP;
+jmpl:R0 = 1; .Lb: CC = R0 == 0; IF CC JUMP .Le; R0 = 0; JUMP.L .Lb; .Le: NOP;
+hwloop:P1 = 4; LSETUP (.Ls, .Ls) LC0 = P1; .Ls: R0 += 1;
+call:CALL f;"
+echo "$progs" | while IFS= read -r line; do
     name=${line%%:*}; code=${line#*:}
-    body="$body
-    $code"
-    printf '.section .text.start\n.global start\nstart:%s\n    OUTC 0x6b;\n    OUTC 0x0a;\n    HLT;\nf:\n    OUTC 0x66;\n    RTS;\n' "$(echo "$body" | sed 's/; */;\n    /g')" > "$W/step.s"
-    if "$T/bfin-elf-as" -mcpu=bf707 -o "$W/step.o" "$W/step.s" 2> "$W/as.err" && "$T/bfin-elf-ld" -T "$HERE/sim.ld" -o "$W/step.elf" "$W/step.o"; then
-        out=$(perl -e 'alarm 10; exec @ARGV' "$RUN" "$W/step.elf" 2>&1); rc=$?
-        echo "step $name: exit $rc, output: $(echo "$out" | head -2 | tr '\n' '|')"
+    printf '.section .text.start\n.global start\nstart:\n    SP.H = 0x07ff;\n    SP.L = 0xfff0;\n    %s\n    OUTC 0x6b;\n    OUTC 0x0a;\n    HLT;\nf:\n    OUTC 0x66;\n    RTS;\n' "$(echo "$code" | sed 's/; */;\n    /g')" > "$W/p.s"
+    if "$T/bfin-elf-as" -mcpu=bf707 -o "$W/p.o" "$W/p.s" 2> "$W/as.err" && "$T/bfin-elf-ld" -T "$HERE/sim.ld" -o "$W/p.elf" "$W/p.o"; then
+        out=$(perl -e 'alarm 10; exec @ARGV' "$RUN" "$W/p.elf" 2>&1); rc=$?
+        echo "branch $name: exit $rc, output: $(echo "$out" | head -2 | tr '\n' '|')"
+        "$T/bfin-elf-objdump" -d "$W/p.elf" | grep -E "^ +10[0-9a-f]{2}:" | head -12 | sed 's/^/    /'
     else
-        echo "step $name: did not assemble: $(head -2 "$W/as.err" | tr '\n' '|')"
+        echo "branch $name: did not assemble: $(head -2 "$W/as.err" | tr '\n' '|')"
     fi
 done
 echo "exit, step by step:"
