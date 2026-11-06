@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "sdk": "1.10",
+  "kind": "drum",
+  "description": "A drum kit drawn on film: each key a shape inked on a 16 mm soundtrack and played through a projector's sound head.",
+  "presetDefaults": {
+    "amp": {
+      "attack": 0,
+      "decay": 32767,
+      "sustain": 32767,
+      "release": 32767
+    }
+  }
+}

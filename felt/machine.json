@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "sdk": "1.10",
+  "kind": "drum",
+  "description": "An old upright piano prepared as Cage prepared his, with bolts, screws, rubber and paper between the strings, played as a drum kit.",
+  "sources": [
+    "tables.cpp"
+  ],
+  "presetDefaults": {
+    "amp": {
+      "attack": 0,
+      "decay": 32767,
+      "sustain": 32767,
+      "release": 32767
+    }
+  }
+}

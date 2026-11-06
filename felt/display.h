@@ -1,0 +1,17 @@
+#pragma once
+// FELT's screen: one note of an upright piano's action, side on (art.h,
+// panel.svg.fragment), drawn for the selected key's model and controls.
+#include <opxy/draw.hpp>
+#include <opxy/page_header.hpp>
+#include "art.h"
+#include "shape.h"
+
+namespace felt {
+using Frame = opxy::draw::Frame<4, 64, art::node_count, 16, 16>;
+struct DisplayState {
+    opxy::draw::PageHeader header;
+    opxy::u32 initialized, track, serial;
+    opxy::i32 age;        // Q10 seconds since the selected key last played
+    opxy::i32 roll;       // the player's roll: how far it has turned, tenths of a degree
+};
+}

@@ -1,0 +1,109 @@
+name: Kit checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  # The kits' per-key mixer channels (padMix, SDK 1.10) are in the SDK's
+  # staging branch since etcetc000/open-xy#399.
+  OPEN_XY_REPO: etcetc000/open-xy
+  OPEN_XY_REF: staging
+  KITS: felt flicker dust
+jobs:
+  # Each kit's records, browser preview, drawing checks and host sound and
+  # screen tests.
+  kits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: trigon
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.OPEN_XY_REPO }}
+          ref: ${{ env.OPEN_XY_REF }}
+          path: open-xy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Preview and host tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang lld
+          python -m pip install numpy==2.3.5
+      - name: Kit source, preview and sound checks
+        run: |
+          for kit in $KITS; do
+            python open-xy/sdk.py test --machine "trigon/$kit" --cxx clang++ --host-cxx g++ || exit 1
+          done
+
+  # Each kit's tools/ub.sh: its host tests and a sweep of its engine and
+  # screen under UBSan and ASan, and built with clang++ and g++, with and
+  # without -fwrapv, every build bit for bit alike.
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: trigon
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.OPEN_XY_REPO }}
+          ref: ${{ env.OPEN_XY_REF }}
+          path: open-xy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compilers and sanitizer runtimes
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang g++
+          version=$(clang --version | sed -n 's/.*clang version \([0-9][0-9]*\).*/\1/p' | head -1)
+          sudo apt-get install -y "libclang-rt-$version-dev"
+          python -m pip install numpy==2.3.5
+      - name: Undefined behaviour and compiler agreement
+        env:
+          OPEN_XY: ${{ github.workspace }}/open-xy
+          PY: python
+          CLANG: clang++
+          GCC: g++
+          GXX: g++
+        run: |
+          for kit in $KITS; do
+            echo "== $kit"
+            sh "trigon/$kit/tools/ub.sh" || exit 1
+          done
+
+  # All three kits compiled together into one native firmware module with the
+  # SDK's pinned Blackfin tools, which run on macOS arm64 and Windows x86_64.
+  firmware:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: trigon
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.OPEN_XY_REPO }}
+          ref: ${{ env.OPEN_XY_REF }}
+          path: open-xy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore the pinned Blackfin tools
+        uses: actions/cache@v4
+        with:
+          path: open-xy/local/toolchain
+          key: toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('open-xy/profiles/toolchains.json') }}
+      - name: Pinned Blackfin tools
+        working-directory: open-xy
+        run: python sdk.py toolchain fetch
+      - name: Firmware compile with all three kits
+        working-directory: open-xy
+        run: |
+          machines=()
+          for kit in $KITS; do machines+=(--machine "../trigon/$kit"); done
+          python sdk.py compile "${machines[@]}" --out "$RUNNER_TEMP/module"
