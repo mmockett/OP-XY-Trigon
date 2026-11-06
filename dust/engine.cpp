@@ -292,12 +292,15 @@ inline bool record_block(Voice& v, i32* x, i32* ry) {
         retune = true;
     }
     if (v.t >= v.pre) {
-        i32 e[frames];
+        i32 e[frames], h[frames / 2];
+        for (unsigned j = 0; j < frames / 2; ++j) h[j] = 0;
         const unsigned struck = strike_block(v, e, x);
         v.glide = multiply(v.glide, v.glide_k);
-        if (v.nmodes) modes_block(v, e, struck, x);
-        layer_block(v, v.layer[0], x, retune);
-        layer_block(v, v.layer[1], x, retune);
+        bool half = v.nmodes && modes_block(v, e, struck, x, h);
+        half |= (v.layer[0].on | v.layer[1].on) & 2;
+        layer_block(v, v.layer[0], x, h, retune);
+        layer_block(v, v.layer[1], x, h, retune);
+        if (half || v.mode_h) half_add(v, h, x);
         metal_block(v, x, retune);
         v.hit_t += frames;
         v.tail = 0;

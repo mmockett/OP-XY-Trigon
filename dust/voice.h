@@ -330,10 +330,9 @@ template <unsigned N> inline void modes_run(Voice& v, const u32* active, u32 cou
     if (k < count) mode_one<N>(v.mode[active[k]], e, n, x);
 }
 // The modes for this block: struck by e for its first n samples (the
-// pulse), then ringing; their sum into x. Those at half the rate run on
-// every other sample of the pulse, and come back to the full rate a straight
-// line between their samples (half a sample late).
-inline void modes_block(Voice& v, const i32* e, unsigned n, i32* x) {
+// pulse), then ringing; their sum into x, and those at half the rate into h
+// (struck by every other sample of the pulse); whether any ran at half.
+inline bool modes_block(Voice& v, const i32* e, unsigned n, i32* x, i32* h) {
     u32 active[mode_count], count = 0, halves[mode_count], nh = 0;
     for (u32 k = 0; k < v.nmodes; ++k) {
         Mode& m = v.mode[k];
@@ -352,29 +351,35 @@ inline void modes_block(Voice& v, const i32* e, unsigned n, i32* x) {
     else v.ringing_modes += count + nh;
     modes_run<frames>(v, active, count, e, n, x);
     if (nh) {
-        i32 eh[frames / 2], h[frames / 2];
+        i32 eh[frames / 2];
         const unsigned nn = (n + 1) / 2;
         for (unsigned j = 0; j < nn; ++j) eh[j] = e[2 * j];
-        for (unsigned j = 0; j < frames / 2; ++j) h[j] = 0;
         modes_run<frames / 2>(v, halves, nh, eh, nn, h);
-        i32 prev = v.mode_h;
-        for (unsigned j = 0; j < frames / 2; ++j) {
-            const i32 y = h[j];
-            x[2 * j] = add(x[2 * j], (prev >> 1) + (y >> 1));
-            x[2 * j + 1] = add(x[2 * j + 1], y);
-            prev = y;
-        }
-        v.mode_h = prev;
-    } else {
-        v.mode_h = 0;
     }
     // the head's motion (its low state is half as large at half the rate)
     const Mode& m0 = v.mode[0];
     v.head = imax(absolute(m0.bp), (m0.glides & 2) ? imin(absolute(m0.lp), U) << 1 : absolute(m0.lp));
+    return nh != 0;
+}
+// The half-rate parts h back at the full rate into x: a straight line
+// between their samples, half a sample late.
+inline void half_add(Voice& v, const i32* h, i32* x) {
+    i32 prev = v.mode_h;
+    for (unsigned j = 0; j < frames / 2; ++j) {
+        const i32 y = h[j];
+        x[2 * j] = add(x[2 * j], (prev >> 1) + (y >> 1));
+        x[2 * j + 1] = add(x[2 * j + 1], y);
+        prev = y;
+    }
+    v.mode_h = prev;
 }
 
 // ------------------------------------------------------------ noise layers
-inline void layer_tune(Layer& n, i32 lrate, i32 shift) { n.f = svf_f(increment(clamp(n.lf + lrate + shift, L(20), L(6600)))); }
+// (a layer at half the rate, on 3, its coefficient for that rate)
+inline void layer_tune(Layer& n, i32 lrate, i32 shift) {
+    n.f = n.on & 2 ? svf_f(increment(clamp(n.lf + lrate + shift, L(20), L(3300)) + octave))
+                   : svf_f(increment(clamp(n.lf + lrate + shift, L(20), L(6600))));
+}
 // Layer k: level amp (Q31 of U); its filter at 2^lf Hz with damping q
 // (Q30, 1/Q: from 0.3, ringing, to 1.9, broad), its low, band and high
 // outputs mixed by gl, gb and gh; attack and decay (log2 s).
@@ -393,7 +398,9 @@ __attribute__((cold)) inline void set_layer(Voice& v, u32 k, i32 amp, i32 lf, i3
     n.bursts = n.next = 0;
     n.ldecay = ldecay;
     env_set(n.env, 0, latk, ldecay);
-    n.on = amp > 0 ? 1 : 0;
+    // a layer of the filter's band alone (no high-pass share) under 2.4 kHz
+    // runs at half the sample rate
+    n.on = amp > 0 ? (gh == 0 && lf + v.lbase <= L(2400) ? 3 : 1) : 0;
     layer_tune(n, v.lbase, 0);
 }
 // A burst of layer k at 2^lat s (record time) with its level (log2) and its band shifted.
@@ -444,6 +451,13 @@ inline void layer_grains(Layer& n, i32* x, unsigned from, unsigned to, i32 gb, i
 inline void layer_run(Voice& v, Layer& n, i32* x, unsigned from, unsigned to, i32 a) {
     // the low output's share joins the band's (the low part of a band is its body)
     const i32 gb = multiply(add(n.gb, n.gl), a), gh = multiply(n.gh, a);
+    if (n.on & 2) {
+        // at half the rate, into the half-rate buffer: the band's noise is 3 dB
+        // denser there, so it comes down by as much
+        ++v.noise_layers;
+        layer_noise(n, x, (from + 1) / 2, (to + 1) / 2, multiply(gb, Q31(0.70710678)), 0);
+        return;
+    }
     if (n.grain) {
         ++v.grain_layers;
         layer_grains(n, x, from, to, gb, gh);
@@ -452,7 +466,9 @@ inline void layer_run(Voice& v, Layer& n, i32* x, unsigned from, unsigned to, i3
         layer_noise(n, x, from, to, gb, gh);
     }
 }
-inline void layer_block(Voice& v, Layer& n, i32* x, bool retune) {
+// (x: the block at the full rate, h at half, for a layer on 3)
+inline void layer_block(Voice& v, Layer& n, i32* x, i32* h, bool retune) {
+    if (n.on & 2) x = h;
     if (!n.on) return;
     // the drum's head gates the layer (a snare's wires buzz as the head moves)
     i32 gate = one;
