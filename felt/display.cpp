@@ -1,15 +1,18 @@
 #include "display.h"
 
-// FELT's screen: one note of an old upright's action, side on. The string
-// stands at the left between the pressure bar and the bridge; to its right
-// the hammer, the damper, the wippen with its jack and spoon, and the key
-// along the bottom on its balance pin. A hit plays the mechanism as a player
-// piano would: the key dips by itself, the wippen rises, the damper leaves
-// the string, the hammer flies to it and checks on its rebound, the string
-// swings; when DECAY's time comes the key rises and the damper lands. The
-// string, the hammer's felt, the damper's felt and BOW's thread are the four
-// reshaping outlines; everything else is a part placed from the key's
-// controls, on the same ranges the sound uses (shape.h).
+// FELT's screen: a textbook plate of Cage's prepared piano, isometric. Three
+// unison strings run over a near-black iron plate, from the fixed far bridge
+// over the near bridge to the hitch rail. Each encoder owns one part and its
+// grey, whatever the model: encoder 1 the near bridge (hollow, 191919 with a
+// CDCDCD edge), which TUNE slides along the strings; encoder 2 the damper
+// (4B4B4B); encoder 3 the striker (969696), from beneath or beside the
+// strings; encoder 4 the preparation wedged between them (CDCDCD). A model's
+// second-row control keeps its encoder's grey and acts on that part or a
+// detail of it. A hit of the selected key strikes and returns, lifts the
+// damper until DECAY's time is up, and sets the strings shimmering. The
+// strings and the bead chain or the bow's thread are the four reshaping
+// outlines; every other part is a box of three faces or a flat piece, placed
+// from the key's controls on the ranges the sound uses (shape.h).
 namespace felt {
 namespace view {
 using opxy::i32;
@@ -58,35 +61,33 @@ inline i32 fall(i32 a, i32 b) {
 inline i32 iabs(i32 v) { return v < 0 ? -v : v; }
 inline i32 clampi(i32 v, i32 lo, i32 hi) { return v < lo ? lo : v > hi ? hi : v; }
 inline i32 lerp(i32 a, i32 b, i32 t) { return a + (((b - a) / 4) * clampi(t, 0, 1024)) / 256; }   // t Q10; |b - a| < 2^21
-// The nearest step of q (a power of two) under v, so a settled part stays exactly still.
-inline i32 snap(i32 v, i32 q) { return v >= 0 ? (v / q) * q : -((-v + q - 1) / q) * q; }
-// A tenth-degree turn as a unit vector (clockwise for positive).
-inline Turn turned(i32 tenths) {
-    const i32 ph = (tenths * 4096) / 225;   // 65536 / 3600
-    const Turn t = {cs(ph) >> 4, sn(ph) >> 4};
-    return t;
-}
-// A point (dx, dy) from a pivot, turned, in Q10 px.
-inline void spin(const Turn& t, i32 dx, i32 dy, i32& x, i32& y) {
-    x = (dx * t.cos - dy * t.sin) / 1024;
-    y = (dx * t.sin + dy * t.cos) / 1024;
-}
+// Rounds toward zero to a step of q, so a motion settles exactly onto its rest.
+inline i32 toward0(i32 v, i32 q) { return v >= 0 ? (v / q) * q : -((-v / q) * q); }
+// A fraction t (Q10) of v, for |v| < 2^21.
+inline i32 part(i32 v, i32 t) { return ((v / 32) * t) / 32; }
 
-// ---------------------------------------------------------------- placing parts
+// ---------------------------------------------------------------- the iso plate
+// A point on the plate (x along the strings, y across them, z up; Q10 iso
+// units, a pixel along an axis) on screen, in Q10 px: 30-degree edges.
+inline i32 iso_x(i32 x, i32 y) { return art::origin_x + ((x - y) * 887) / 1024; }
+inline i32 iso_y(i32 x, i32 y, i32 z) { return art::origin_y + (x + y) / 2 - z; }
+// The palette: the grey code (each encoder's base grey, its right face one
+// entry on), the strings, neutral wood, the encoders' hairlines.
+enum Code : u32 { black = 0, e1 = 1, e2 = 3, e3 = 5, e4 = 7, string_mid = 9, string_out = 10, wood = 11,
+                  hair1 = 13, hair2 = 14, thread = 15 };
 template <class F>
-inline void put(F& f, u32 node, i32 x, i32 y, i32 scale, u32 shade, i32 tenths = 0) {
-    place(f, node, x, y, clampi(scale, 64, 2 * unit), shade, shade ? stroke : keep);
-    if (tenths) turn(f, node, turned(tenths));
+inline void at(F& f, u32 node, i32 x, i32 y, i32 z, i32 scale, u32 shade) {
+    place(f, node, iso_x(x, y), iso_y(x, y, z), clampi(scale, 64, 2 * unit), shade, fill_and_stroke);
 }
-// A part that fades through the greys: parked once it has faded out.
+// A box: its left, right and top faces about one pivot, the right a ramp step darker.
 template <class F>
-inline void put_shaded(F& f, u32 node, i32 x, i32 y, i32 scale, i32 shade, i32 tenths = 0) {
-    if (shade <= 0) { hide(f, node); return; }
-    put(f, node, x, y, scale, static_cast<u32>(shade > 8 ? 8 : shade), tenths);
+inline void box(F& f, u32 first, i32 x, i32 y, i32 z, i32 scale, u32 code) {
+    for (u32 k = 0; k < 3; ++k) at(f, first + k, x, y, z, scale, k == 1 ? code + 1 : code);
 }
-// An assembly turned about its pivot: every part shares the pivot and the turn.
 template <class F>
-inline void put_about(F& f, u32 node, i32 px, i32 py, i32 tenths, u32 shade) { put(f, node, px, py, unit, shade, tenths); }
+inline void park(F& f, u32 first, u32 count) {
+    for (u32 k = 0; k < count; ++k) hide(f, first + k);
+}
 
 // ---------------------------------------------------------------- captions
 const u32 cap = header_capacity + 1;
@@ -221,33 +222,78 @@ inline void soft_text(char* out, i32 v) {
     else number(out, v, "");
 }
 
-// ---------------------------------------------------------------- the models' parts
-// Which control sets each shared part: the hammer's hardness, its knock
-// (thinner felt), its blow (GLIDE), the preparation's size and its spot
-// (-1: none, or fixed).
-struct Look { signed char hardness, knock, glide, size, spot; unsigned char struck; };
-const Look looks[model_count] = {
-    {2, 5, 4, 3, -1, 1},    // THUD
-    {2, -1, -1, 3, 4, 1},   // RATTLE
-    {2, 5, 4, 3, -1, 1},    // TOM
-    {-1, -1, -1, -1, -1, 0},// LID
-    {2, 4, -1, 3, 5, 1},    // TACK: TACK hardens, MUTE is the felt strip at SPOT
-    {2, -1, -1, 3, 4, 1},   // BELL
-    {-1, -1, -1, 3, 5, 0},  // BRUSH
-    {3, -1, -1, 5, -1, 1},  // PLANK
-    {-1, -1, -1, 2, -1, 0}, // CHAIN
-    {2, -1, -1, 3, 4, 1},   // BOLT
-    {-1, -1, -1, 4, 3, 0},  // PLUCK
-    {-1, -1, -1, 2, 5, 0},  // BOW
-};
-// A point on the string's centre line at height y (Q10 px) along a string
-// from top to bottom swung by amp (Q10 px) in its first mode.
-inline i32 swing_at(i32 y, i32 top, i32 bottom, i32 amp) {
-    const i32 len = bottom - top;
-    if (len <= 0 || y <= top || y >= bottom) return 0;
-    const i32 u = ((y - top) / 64) * 32768 / (len / 64);   // 0..32768: half a turn
-    return (amp * sn(u)) / 16384;
+// ---------------------------------------------------------------- outlines
+// FNV-1a over a few words: an outline's geometry key.
+inline u32 mix(u32 key, i32 v) { return (key ^ static_cast<u32>(v)) * 16777619u; }
+// A ribbon about a centreline of 32 points (Q10 px from the outline's
+// origin), h above and below it: drawn at scale 2, so halved.
+template <class F>
+inline void ribbon(F& f, u32 p, const i32* cx, const i32* cy, i32 h) {
+    typename F::path_type& o = f.paths[p];
+    for (u32 j = 0; j < 32; ++j) {
+        o.points[j].x = cx[j] / 2;
+        o.points[j].y = (cy[j] - h) / 2;
+        o.points[63 - j].x = cx[j] / 2;
+        o.points[63 - j].y = (cy[j] + h) / 2;
+    }
 }
+// A string from the far bridge to the hitch rail at y: its speaking length,
+// to the near bridge at xb, swung up and down by amp (Q10 px) in its first
+// mode, or (PLUCK) pulled aside at px by pull (Q10 iso units); the rest of
+// it lies still on the bridge and rail.
+template <class F>
+inline void string_line(F& f, u32 p, i32 y, i32 xb, i32 amp, i32 px, i32 pull, u32 shade) {
+    const i32 mx = (art::string_x0 + art::string_x1) / 2;
+    const i32 ox = iso_x(mx, y), oy = iso_y(mx, y, art::zs);
+    u32 key = mix(mix(mix(mix(2166136261u, xb), amp), px), pull);
+    if (!key) key = 1;
+    if (f.paths[p].key != key) {
+        i32 cx[32], cy[32];
+        for (u32 j = 0; j < 32; ++j) {
+            const i32 i = static_cast<i32>(j);
+            i32 x, d = 0, a = 0;
+            if (j < 24) {
+                x = art::string_x0 + ((xb - art::string_x0) * i) / 23;
+                d = (amp * sn(i * 32768 / 23)) / 16384;
+                if (pull) {
+                    const i32 u = x - art::string_x0, w = px - art::string_x0, v = xb - x, r = xb - px;
+                    a = x < px ? (pull * (u / 64)) / (w / 64 + 1) : (pull * (v / 64)) / (r / 64 + 1);
+                }
+            } else {
+                x = xb + ((art::string_x1 - xb) * (i - 23)) / 8;
+            }
+            cx[j] = iso_x(x, y + a) - ox;
+            cy[j] = iso_y(x, y + a, art::zs + d) - oy;
+        }
+        ribbon(f, p, cx, cy, 360);
+        f.paths[p].key = key;
+    }
+    place(f, p, ox, oy, 2 * unit, shade, stroke);
+}
+// CHAIN's chain, along y at x: from the peg's top over the three strings,
+// sagging between them, and draped off the last onto the plate. Its height
+// at y (Q10 iso units).
+struct Chain { i32 top, sag, drape; };
+inline i32 chain_z(const Chain& c, i32 y) {
+    const i32 on = art::zs + 300;
+    if (y < art::string_0) {
+        const i32 u = ((y - 2560) / 16) * 1024 / ((art::string_0 - 2560) / 16);
+        return c.top + part(on - c.top, u) - part(c.sag / 2, sn(u * 32) >> 4);
+    }
+    if (y < art::string_2) {
+        const i32 u = ((y - art::string_0) % (10 << 10)) * 32768 / (10 << 10);
+        return on - part(c.sag, sn(u) >> 4);
+    }
+    const i32 u = clampi(((y - art::string_2) / 16) * 1024 / (c.drape / 16), 0, 1024);
+    return 300 + part(on - 300, 1024 - ((u * u) >> 10));
+}
+const i32 chain_y0 = 2560, chain_y1 = 54 << 10;
+
+// ---------------------------------------------------------------- the models' parts
+// Where each model keeps the second-row controls of encoders 1 and 2.
+enum Mark : unsigned char { mark_none, mark_glide, mark_spot, mark_bend };
+// BRUSH's screws wedged by the bridge: how far before it (iso units) and between which strings
+const opxy::i8 screw_back[3] = {7, 14, 10}, screw_y[3] = {25, 25, 35};
 }
 
 using namespace view;
@@ -256,12 +302,11 @@ inline void display_reset(DisplayState& state) {
     state.header.reset();
     state.initialized = 0;
     state.age = 1 << 24;
-    state.roll = 0;
+    state.spare = 0;
 }
 
 inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& frame) {
     const u32 m = input.model < model_count ? input.model : 0;
-    const Look& look = looks[m];
     i32 t[8], raw[8];
     for (u32 i = 0; i < 8; ++i) {
         const u32 r = input.slots[i] < 0 ? 0u : static_cast<u32>(input.slots[i]) >> 24;
@@ -281,255 +326,417 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     state.track = input.track;
     state.initialized = 1;
     if (baseline) state.age = 1 << 24;
-    else if (fresh) {
-        // the roll moves on a notch a note, turning the spools as it plays
-        if (!still) state.roll = (state.age < (1 << 24) - 4096 ? state.roll + 120 : state.roll) % 3600;
-        state.age = 0;
-    }
+    else if (fresh) state.age = 0;
     else state.age = clampi(state.age + step, 0, 1 << 24);
     const i32 age = still ? (1 << 24) : state.age;   // reduced motion: always at rest
-    // the damper's time (DECAY), and for BOW the draw before it
-    i32 hold = secs(shape::along(shape::damper[m], t[1] * 64));
-    if (m == M::BOW) hold = secs(shape::along(shape::draw, t[3] * 64));
-    if (m == M::LID) hold = 0;
     const bool active = age < (1 << 24) - 4096;
-    const i32 t_hit = 31;   // Q10 s: the hammer's flight, 30 ms
+    // DECAY's time (Q10 s): the damper lands then; BOW's after the draw
+    const i32 ring = secs(shape::along(shape::damper[m], t[1] * 64));
+    const i32 draw_t = secs(shape::along(shape::draw, t[3] * 64));
+    const i32 land = m == M::BOW ? draw_t + ring : ring;
+    const i32 t_hit = 31;   // Q10 s: a striker's flight, 30 ms
+    const bool hammer = m == M::THUD || m == M::RATTLE || m == M::TOM || m == M::TACK || m == M::BELL || m == M::BOLT;
 
-    // --- the key: dips by itself on a hit, rises when the damper's time comes (Q10 of its travel)
-    i32 dip = 0;
-    if (active && (look.struck || m == M::PLANK)) {
-        if (age < hold) dip = 1024 - (fall(age, 10) >> 5);
-        else dip = (fall(age - hold, 42) >> 5) * (1024 - (fall(hold, 10) >> 5)) / 1024;
-        dip = snap(dip, 16);
+    // --- encoder 1: the near bridge, TUNE its place (shorter is higher)
+    const i32 xb0 = lerp(art::bridge_lo, art::bridge_hi, t[0]);
+    const i32 len = xb0 - art::node_x;   // the speaking length
+    // the preparation's place: SPOT from 0.12 to 0.42 of the length back
+    // from the bridge, or 0.22 on the models without one (THUD's and TOM's
+    // rubber 0.3, clear of the bridge's glide)
+    const i32 spot_t = m == M::RATTLE || m == M::BELL || m == M::BOLT ? t[4]
+                     : m == M::TACK || m == M::BOW ? t[5] : m == M::PLUCK ? t[3] : -1;
+    const i32 prep_x = xb0 - part(len, spot_t >= 0 ? 123 + ((spot_t * 307) >> 10) : m == M::THUD || m == M::TOM ? 307 : 225);
+    // encoder 1's mark across the strings: where GLIDE starts the bridge,
+    // where BEND takes it, or the preparation's SPOT
+    i32 mark = 0;
+    Mark kind = mark_none;
+    if (m == M::THUD || m == M::TOM) { kind = mark_glide; mark = -part(len, (t[4] * 123) >> 10); }
+    if (m == M::BOW) {
+        // BEND down lengthens it, but never past the hitch rail
+        kind = mark_bend;
+        mark = -part(len, ((t[4] - 512) * 256) / 1024);
+        if (xb0 + mark > (156 << 10)) mark = (156 << 10) - xb0;
     }
-    // the damper's lift: with the key (or, for a model that does not strike,
-    // the damper rail lifted for it), and the pedal's lift always
-    i32 lift = 0;
-    if (active && m != M::LID) {
-        if (look.struck || m == M::PLANK) lift = clampi((dip - 300) * 1024 / 724, 0, 1024);
-        else if (age < hold) lift = 1024 - (fall(age, 25) >> 5);
-        else lift = (fall(age - hold, 50) >> 5) * (1024 - (fall(hold, 25) >> 5)) / 1024;
-        lift = snap(lift, 16);
+    if (m == M::RATTLE || m == M::BELL || m == M::BOLT) kind = mark_spot;
+    // the bridge's travel on a hit: a hard blow's stretch falling back
+    // (GLIDE), or the pitch bent over the draw and back (BEND)
+    i32 slide = 0;
+    if (active && kind == mark_glide) {
+        const i32 e = age < 60 ? (age * 1024) / 60 : fall(age - 60, 160) >> 5;
+        slide = toward0(part(mark, e), 512);
     }
-    const i32 lift_all = clampi(lift + (pedal * 3) / 4, 0, 1024);
+    if (active && kind == mark_bend) {
+        const i32 e = age < draw_t ? (age * 1024) / (draw_t + 1) : fall(age - draw_t, 300) >> 5;
+        slide = toward0(part(mark, e), 512);
+    }
+    const i32 xb = xb0 + slide;
+    box(frame, art::bridge_l, xb, (28 << 10), art::zs, unit, e1);
+    if (kind == mark_spot) at(frame, art::mark_1, prep_x, art::string_1, art::zs + 300, unit, hair1);
+    else if ((kind == mark_glide && mark) || (kind == mark_bend && iabs(mark) >= 1024)) at(frame, art::mark_1, xb0 + mark, art::string_1, art::zs + 300, unit, hair1);
+    else hide(frame, art::mark_1);
 
-    // --- the string: a unison pair from the pressure bar to the bridge
-    const bool string_tune = m != M::LID && m != M::CHAIN;
-    const i32 bridge = string_tune ? lerp(art::bridge_lo, art::bridge_hi, t[0]) : (art::bridge_lo + art::bridge_hi) / 2;
-    const i32 top = art::string_top;
-    const i32 gap = (3 << 10) + age_ * 4;             // the unisons apart: AGE spreads them
-    // how far it swings now (Q10 px), and its visual frequency
-    i32 amp = 0;
+    // --- the strings: still, or swinging after the striker meets them
+    i32 amp = 0, pull = 0, pluck_x = 0;
+    if (m == M::PLUCK) pluck_x = prep_x + (5 << 10);
     if (active) {
-        // a free ring, Q10 s, as the model's own: rubber and felt mutes
-        // shorten it, a gong or a plank lengthens it
-        i32 ring_tau = 700;
-        if (m == M::THUD || m == M::TOM) ring_tau = 700 - t[3] / 2;
-        if (m == M::TACK) ring_tau = 500 - t[3] / 3;
-        if (m == M::BOLT || m == M::PLANK || m == M::BELL) ring_tau = 1500;
-        i32 env = fall(age, ring_tau);
-        if (age >= hold && m != M::LID) env = (env * (fall(age - hold, 52) >> 5)) / 1024;
-        i32 a0 = 4 << 10;
-        if (m == M::RATTLE) a0 = (2 << 10) + t[5] * 3;   // RING: the note left under the paper
-        if (m == M::LID || m == M::CHAIN) a0 = (pedal * 2);
-        if (m == M::BRUSH) a0 = 1 << 10;
-        if (m == M::BOW) a0 = age < hold ? (1 << 10) + ((age * 2048) / (hold + 1)) : 3 << 10;
-        const i32 start = look.struck || m == M::PLANK ? t_hit : 0;
+        // how long the string rings free (Q10 s), and how far it swings (Q10 px)
+        i32 tau = 700, a0 = 1536, start = t_hit;
+        if (m == M::THUD || m == M::TOM) tau = 700 - t[3] / 2;
+        if (m == M::TACK) tau = 500 - t[3] / 3;
+        if (m == M::BELL || m == M::BOLT || m == M::PLANK) tau = 1500;
+        if (m == M::RATTLE) a0 = 1024 + t[5];                 // RING: the note left under the paper
+        if (m == M::LID) { a0 = 768; start = 40; }
+        if (m == M::BRUSH || m == M::CHAIN) { a0 = 512; start = 0; }
+        if (m == M::PLUCK) { a0 = 2048; start = 50; }
+        if (m == M::BOW) { start = 0; a0 = age < draw_t ? 512 + (age * 1024) / (draw_t + 1) : 1536; }
+        i32 env = fall(age, tau);
+        if (m == M::BOW && age < draw_t) env = 32768;
+        if (age >= land) env = (env * (fall(age - land, 50) >> 5)) >> 10;
         if (age >= start) {
-            const i32 hz_ = 7 + ((t[0] * 6) >> 10);
-            const i32 ph = static_cast<i32>((static_cast<u32>(age - start) * static_cast<u32>(hz_) * 64u) & 0xffffu);
-            amp = (((a0 * env) >> 15) * cs(ph)) >> 14;
+            const i32 hz = 7 + ((t[0] * 6) >> 10);
+            const i32 ph = static_cast<i32>((static_cast<u32>(age - start) * static_cast<u32>(hz) * 64u) & 0xffffu);
+            amp = toward0((((a0 * env) >> 15) * cs(ph)) / 16384, 256);
         }
-        if (m == M::PLUCK) {
-            // the quill pulls the string aside, then lets it go
-            if (age < 24) amp = -((3 << 10) * age) / 24;
-        }
-        amp = snap(amp, 256);
+        if (m == M::PLUCK && age < 50) pull = toward0((3 << 10) * age / 50, 256);   // the nail pulls it aside
     }
-    // the BOW's tuning lever bends the string's pitch (and the pluck's pull is a kink at the quill)
-    const i32 spot_y = look.spot >= 0 ? lerp(art::strike_y + (14 << 10), bridge - (14 << 10), t[look.spot]) : art::strike_y + (26 << 10);
-    {
-        const i32 mid = (top + bridge) / 2;
-        u32 key = 2166136261u;
-        key = (key ^ static_cast<u32>(amp)) * 16777619u;
-        key = (key ^ static_cast<u32>(gap)) * 16777619u;
-        key = (key ^ static_cast<u32>(bridge)) * 16777619u;
-        key = (key ^ static_cast<u32>(m == M::PLUCK ? spot_y : 0)) * 16777619u;
-        if (!key) key = 1;
-        if (frame.paths[0].key != key) {
-            Frame::path_type& o = frame.paths[0];
-            for (u32 i = 0; i < 32; ++i) {
-                // down the right string, then up the left one; both 1/2 size (drawn at scale 2)
-                const i32 y = top + 512 + ((bridge - top - 1024) * static_cast<i32>(i)) / 31;
-                i32 d = swing_at(y, top, bridge, amp);
-                if (m == M::PLUCK && amp < 0 && age < 24) {
-                    // a kink at the quill rather than a curve
-                    d = y < spot_y ? (amp * (y - top) / 64) / ((spot_y - top) / 64) : (amp * (bridge - y) / 64) / ((bridge - spot_y) / 64);
-                }
-                o.points[i].x = (d + gap / 2) / 2;
-                o.points[i].y = (y - mid) / 2;
-                o.points[63 - i].x = (d - gap / 2) / 2;
-                o.points[63 - i].y = (y - mid) / 2;
-            }
-            o.key = key;
+    string_line(frame, 0, art::string_0, xb, amp, pluck_x, 0, string_out);
+    string_line(frame, 1, art::string_1, xb, m == M::PLUCK && pull ? 0 : amp, pluck_x, pull, string_mid);
+    string_line(frame, 2, art::string_2, xb, amp, pluck_x, 0, string_out);
+
+    // --- encoder 3, page 2: PEDAL lifts the felt off the sympathetic
+    // strings behind; lifted, they shimmer with the note
+    box(frame, art::pedal_l, art::damper_x, art::pedal_y, art::zs + 410 + pedal * 8, unit, e3);
+    for (u32 k = 0; k < 2; ++k) {
+        i32 dz = 0;
+        if (active && pedal > 0 && age > t_hit) {
+            const i32 env = fall(age, 900) >> 5;
+            const i32 ph = static_cast<i32>((static_cast<u32>(age) * (9u + 2u * k) * 64u) & 0xffffu);
+            dz = toward0((((pedal * env) >> 10) * 3 / 4) * sn(ph) / 16384, 256);
         }
-        place(frame, 0, art::string_x, mid, 2 * unit, 9, stroke);
-    }
-    put(frame, art::bridge, art::string_x, bridge, unit, 5);
-    put(frame, art::bridge_pin, art::string_x, bridge, unit, 6);
-    // the neighbouring strings behind: dim, and ringing when the pedal holds
-    // their dampers off; PLANK's plank lays more of them down
-    {
-        const i32 n = m == M::PLANK ? 1024 + t[2] * 5 : 2048;   // Q10 strings shown
-        for (u32 k = 0; k < 6; ++k) {
-            const i32 f = clampi(n - static_cast<i32>(k) * 1024, 0, 1024);
-            const i32 x = art::string_x - (7 << 10) - static_cast<i32>(k) * (m == M::PLANK ? 3584 + t[2] * 2 : 4096);
-            i32 dx = 0;
-            if (active && pedal > 64 && age > t_hit) {
-                const i32 env = fall(age, 900);
-                dx = snap(((pedal * env) >> 15) * sn(static_cast<i32>((static_cast<u32>(age) * (9u + k) * 64u) & 0xffffu)) / 8192, 512);
-            }
-            const i32 y = (top + bridge) / 2 + (static_cast<i32>(k & 1) << 11);
-            put_shaded(frame, art::neighbour_0 + k, x + dx, y, unit, f ? 1 + ((f * (1 + ((pedal * 3) >> 10))) >> 10) : 0);
-        }
+        at(frame, art::symp_0 + k, art::symp_mid_x, k ? art::symp_y1 : art::symp_y0, art::zs + dz, unit, string_out);
     }
 
-    // --- the hammer about its centre pin: its felt's shape, its blow, its flight
-    const i32 hard = look.hardness >= 0 ? t[look.hardness] : 512;
-    const i32 knock = look.knock >= 0 ? t[look.knock] : 0;
-    const i32 depth = (15 << 10) - hard * 4 - knock * 6;   // the felt: plump when soft, thinner over the core with KNOCK
-    // the angle at which the felt's tip meets the string (tenths of a degree;
-    // clockwise turns the head away from the string)
-    const i32 tip_x = art::hammer_face_x - depth;      // local, Q10
-    const i32 reach = (art::string_x + gap / 2 + 512) - art::hammer_x;
-    const i32 a_strike = ((reach - tip_x) * 573) / -art::hammer_tip_y;   // radians over the tip's height, as tenths
-    const i32 blow = (10 << 10) + (look.glide >= 0 ? t[look.glide] * 12 : 4 << 10) - soft * 5;   // px off the string at rest
-    const i32 a_rest = a_strike + (blow * 573) / -art::hammer_tip_y;
-    const i32 a_check = a_strike + (a_rest - a_strike) * 11 / 20;
-    i32 a = a_rest;
-    if (active && (look.struck || m == M::PLANK)) {
-        if (age < t_hit) a = a_rest + ((a_strike - a_rest) * ((age * 1024 / t_hit) * (age * 1024 / t_hit) / 1024)) / 1024;
-        else if (age < hold) a = a_check + ((a_strike - a_check) * (fall(age - t_hit, 14) >> 5)) / 1024;
-        else a = a_rest + ((a_check - a_rest) * (fall(age - hold, 45) >> 5)) / 1024;
-        a = snap(a, 2);
-    }
+    // --- encoder 2: the damper on the strings. DECAY: it rests lighter,
+    // hovering higher, the longer the note rings; a hit lifts it until
+    // DECAY's time is up. RING and HOLLOW draw it off toward the near string.
     {
-        const u32 sh = 7;
-        put_about(frame, art::hammer_butt, art::hammer_x, art::hammer_y, a, 6);
-        put_about(frame, art::hammer_butt_felt, art::hammer_x, art::hammer_y, a, 4);
-        put_about(frame, art::hammer_catcher, art::hammer_x, art::hammer_y, a, 5);
-        put_about(frame, art::hammer_shank, art::hammer_x, art::hammer_y, a, sh);
-        put_about(frame, art::hammer_molding, art::hammer_x, art::hammer_y, a, 6);
-        put(frame, art::hammer_pin, art::hammer_x, art::hammer_y, unit, 5);
+        const i32 hover = t[1] * 6;
+        const i32 aside = m == M::RATTLE || m == M::LID ? t[5] * 14 : 0;
+        i32 lift = 0;
+        if (active) {
+            lift = age < 50 ? ((5 << 10) * age) / 50 : 5 << 10;
+            if (age >= land) lift = (lift * (fall(age - land, 40) >> 5)) >> 10;
+            lift = toward0(lift, 256);
+        }
+        box(frame, art::damper_l, art::damper_x, art::string_1 + aside, art::zs + 410 + hover + lift, unit, e2);
+    }
+
+    // --- encoder 3: the striker
+    // the hammer from beneath through its slot: felt (HAMMER: plump and big
+    // when soft, small when hard), its molding (KNOCK: more wood under the
+    // felt) and shank; it strikes and returns. SOFT shifts it back (una corda).
+    if (hammer) {
+        const i32 fs = m == M::TACK ? 840 : 1024 - ((t[2] * 358) >> 10);
+        const i32 knock = m == M::THUD || m == M::TOM ? t[5] : m == M::TACK ? t[4] : -1;
+        const i32 ks = knock >= 0 ? 700 + ((knock * 614) >> 10) : 1024;
+        const u32 kc = m == M::TACK ? e1 : knock >= 0 ? e2 : wood;
+        const i32 rest = art::zs - (5 << 10), strike = art::zs - 410;
+        i32 rise = 0;
+        if (active) {
+            if (age < t_hit) rise = ((strike - rest) * ((age * 32) / t_hit) * ((age * 32) / t_hit)) / 1024;
+            else rise = toward0(((strike - rest) * (fall(age - t_hit, 45) >> 5)) >> 10, 256);
+        }
+        const i32 y = art::string_1 - soft * 6;
+        const i32 top = rest + rise;
+        const i32 foot = top - ((art::felt_h * fs) >> 10);
+        const i32 base = foot - ((art::molding_h * ks) >> 10);
+        box(frame, art::felt_l, art::hammer_x, y, top, fs, e3);
+        box(frame, art::molding_l, art::hammer_x, y, foot, ks, kc);
+        at(frame, art::shank, art::hammer_x, y, base, unit, wood);
         // TACK: the drawing pin in the felt
-        if (m == M::TACK) put_shaded(frame, art::hammer_tack, art::hammer_x, art::hammer_y, unit, 2 + ((t[2] * 6) >> 10), a);
-        else hide(frame, art::hammer_tack);
-        // the felt: plump and round when soft, drawn to a point when hard;
-        // AGE cuts grooves where the strings have struck it
-        u32 key = 0x811c9dc5u;
-        key = (key ^ static_cast<u32>(hard)) * 16777619u;
-        key = (key ^ static_cast<u32>(depth)) * 16777619u;
-        key = (key ^ static_cast<u32>(age_)) * 16777619u;
-        if (!key) key = 1;
-        if (frame.paths[1].key != key) {
-            Frame::path_type& o = frame.paths[1];
-            const i32 yc = art::hammer_tip_y, hh = 12288;   // 12 px
-            for (u32 i = 0; i < 40; ++i) {
-                // the face from top to bottom: s from -1 to 1 (Q10)
-                const i32 s = -1024 + static_cast<i32>(i) * 2048 / 39;
-                const i32 as = iabs(s);
-                // round, cos(pi |s| / 2), to pointed, 1 - |s|
-                const i32 c = cs(static_cast<i32>((as * 16384) / 1024)) >> 4;
-                const i32 point = 1024 - as;
-                i32 p = c + (((point - c) * hard) >> 10);
-                // the grooves: three shallow cuts across the striking face
-                for (i32 g = -1; g <= 1; ++g) {
-                    const i32 dd = iabs(s - g * 260);
-                    if (dd < 90) p -= ((90 - dd) * 2 * age_) >> 10;   // up to 2 px deep
-                }
-                o.points[i].x = (art::hammer_face_x - ((depth / 32) * p) / 32) / 2;
-                o.points[i].y = (yc + (s * hh) / 1024) / 2;
-            }
-            for (u32 i = 0; i < 24; ++i) {
-                // back up the molding's face, a hair inside it
-                const i32 y = yc + hh - static_cast<i32>(i + 1) * (2 * hh) / 25;
-                o.points[40 + i].x = (art::hammer_face_x + 256) / 2;
-                o.points[40 + i].y = y / 2;
-            }
-            o.key = key;
-        }
-        place(frame, 1, art::hammer_x, art::hammer_y, 2 * unit, 9, stroke);
-        turn(frame, 1, turned(a));
-        // the hammer rail: the shank rests on it; SOFT moves it in
-        // (the shank's right edge at the rail's height, at rest)
-        i32 rx, ry;
-        const i32 ly = art::rail_y - art::hammer_y;   // local, Q10
-        const i32 lx = 1331 + ((ly + 16179) * 233) / 1024;   // along its edge, (1.3, -15.8) to (-10.2, -66)
-        spin(turned(a_rest), lx, ly, rx, ry);
-        put(frame, art::hammer_rail, art::hammer_x + rx + 512, art::rail_y, unit, 5);
-        put(frame, art::hammer_rail_felt, art::hammer_x + rx + 512, art::rail_y, unit, 4);
+        if (m == M::TACK) at(frame, art::tack, art::hammer_x, y, top, 400 + ((t[2] * 819) >> 10), e3);
+        else hide(frame, art::tack);
+    } else {
+        park(frame, art::felt_l, 3);
+        park(frame, art::molding_l, 3);
+        if (m != M::PLANK) hide(frame, art::shank);
+        hide(frame, art::tack);
     }
-
-    // --- the damper: its felt (DECAY: thick, a dead note; thin, a long one)
-    // pressed on the string; lifted off by the spoon, or by the pedal's rail
-    {
-        const i32 d = (10 << 10) - t[1] * 8;   // the felt's thickness
-        // turned so its felt just meets the string
-        const i32 face = art::damper_face_x;   // local x of the head's face
-        const i32 target = art::string_x + gap / 2 + 512 - art::damper_x;
-        const i32 r = art::damper_y - art::damp_y;   // the felt's height over the pin, Q10 px
-        const i32 rest = ((target - (face - d)) * 573) / r;
-        const i32 da = rest + (lift_all * 90) / 1024;   // up to 9 degrees away
-        const i32 dq = snap(da, 2);
-        put_about(frame, art::damper_lever, art::damper_x, art::damper_y, dq, 6);
-        put_about(frame, art::damper_wire, art::damper_x, art::damper_y, dq, 6);
-        put_about(frame, art::damper_head, art::damper_x, art::damper_y, dq, 6);
-        put(frame, art::damper_pin, art::damper_x, art::damper_y, unit, 5);
-        u32 key = 0x9e3779b9u ^ static_cast<u32>(d);
-        if (!key) key = 1;
-        if (frame.paths[2].key != key) {
-            Frame::path_type& o = frame.paths[2];
-            const i32 y0 = art::damp_y - art::damper_y;   // local
-            const i32 x1 = face - 256, x0 = face - d;
-            // a felt block: 6
-            // points across its top, 26 down its face, 6 back along its foot,
-            // 26 up its back against the head
-            for (u32 i = 0; i < 64; ++i) {
-                i32 x, y;
-                const i32 h = 10 << 10;
-                if (i < 6) { x = x1 - ((x1 - x0) * static_cast<i32>(i)) / 6; y = y0 - h; }
-                else if (i < 32) { x = x0; y = y0 - h + ((2 * h) * static_cast<i32>(i - 6)) / 26; }
-                else if (i < 38) { x = x0 + ((x1 - x0) * static_cast<i32>(i - 32)) / 6; y = y0 + h; }
-                else { x = x1; y = y0 + h - ((2 * h) * static_cast<i32>(i - 38)) / 26; }
-                o.points[(i + 48) & 63].x = x / 2;
-                o.points[(i + 48) & 63].y = y / 2;
-            }
-            o.key = key;
+    // PLANK: the plank under a run of strings (WIDTH: as long as the keys it
+    // presses), its felt pad (encoder 4, HAMMER: narrower as it hardens); it
+    // rises to the strings over BLOOM's time and stays till DECAY's
+    i32 plank_top = 0, plank_len = 0;
+    if (m == M::PLANK) {
+        const i32 ps = 600 + ((t[2] * 1434) >> 10);
+        const i32 pads = (ps * (1024 - ((t[3] * 460) >> 10))) >> 10;
+        const i32 bloom_t = secs(shape::along(shape::bloom, t[4] * 64)) + 34;
+        i32 rise = 0;
+        if (active) {
+            rise = age < bloom_t ? ((5 << 10) * age) / bloom_t : 5 << 10;
+            if (age >= land) rise = (rise * (fall(age - land, 45) >> 5)) >> 10;
+            rise = toward0(rise, 256);
         }
-        place(frame, 2, art::damper_x, art::damper_y, 2 * unit, 9, stroke);
-        turn(frame, 2, turned(dq));
-    }
-
-    // --- the wippen and key: the key's front dips, its tail lifts the wippen
-    {
-        const i32 ka = (dip * 22) / 1024;          // the key, up to 2.2 degrees
-        const i32 wa = -(dip * 44) / 1024;         // the wippen, up to 4.4 degrees the other way
-        put_about(frame, art::key, art::key_x, art::key_y, ka, 6);
-        put_about(frame, art::key_front, art::key_x, art::key_y, ka, 4);
-        put_about(frame, art::key_capstan, art::key_x, art::key_y, ka, 5);
-        put_about(frame, art::key_lead_0, art::key_x, art::key_y, ka, 4);
-        put_about(frame, art::key_lead_1, art::key_x, art::key_y, ka, 4);
-        put(frame, art::key_pin, art::key_x, art::key_y, unit, 5);
-        put_about(frame, art::wippen, art::wippen_x, art::wippen_y, wa, 6);
-        put_about(frame, art::wippen_jack, art::wippen_x, art::wippen_y, wa, 6);
-        put_about(frame, art::wippen_spoon, art::wippen_x, art::wippen_y, wa, 5);
-        put(frame, art::wippen_pin, art::wippen_x, art::wippen_y, unit, 5);
+        const i32 pad_top = art::zs - 410 - (5 << 10) + rise;
+        plank_top = pad_top;
+        plank_len = (ps * 400) >> 10;
+        const i32 pad_foot = pad_top - ((art::pad_h * pads) >> 10);
+        box(frame, art::pad_l, art::hammer_x, art::string_1, pad_foot, pads, e4);
+        box(frame, art::plank_l, art::hammer_x, art::string_1, pad_foot, ps, e3);
+        at(frame, art::shank, art::hammer_x, art::string_1, pad_foot - ((art::plank_h * ps) >> 10), unit, wood);
+    } else {
+        park(frame, art::plank_l, 3);
+        park(frame, art::pad_l, 3);
     }
 
     // --- every model's own parts: parked unless this model uses them
-    for (u32 n = art::rubber; n <= art::plank_grain; ++n) hide(frame, n);
-    if (m != M::BOW) {
-        // the thread's outline, parked: a small ring so it stays a valid outline
+    for (u32 n = art::peg_l; n <= art::peg_t; ++n) hide(frame, n);
+    for (u32 n = art::rubber_a_l; n <= art::brush_screw_2; ++n) hide(frame, n);
+    hide(frame, art::mark_2);
+    for (u32 n = art::mute_l; n <= art::seam; ++n) hide(frame, n);
+    // the preparation's top, where AGE's seam lies: x, y, z and the seam's length
+    i32 sx = 0, sy = 0, sz = 0, sl = 0;
+    // a nut on a screw or bolt (encoder 2: LOOSE, BUZZ backs it off up the
+    // shank; loose, it chatters on a hit)
+    i32 nut_at = -1, nut_y = 25 << 10, nut_lo = 0, nut_hi = 0, loose = 0;
+
+    if (m == M::THUD || m == M::TOM) {
+        // RUBBER: two rubber wedges between the unisons
+        const i32 rs = 560 + ((t[3] * 737) >> 10);
+        box(frame, art::rubber_a_l, prep_x, 25 << 10, art::zs, rs, e4);
+        box(frame, art::rubber_b_l, prep_x, 35 << 10, art::zs, rs, e4);
+        sx = prep_x; sy = 25 << 10; sz = art::zs + 7 * rs; sl = rs;
+    }
+    if (m == M::RATTLE) {
+        // PAPER: a strip woven through the strings at SPOT, which chatters
+        // while the string swings
+        const i32 ps = 500 + ((t[3] * 717) >> 10);
+        i32 jig = 0;
+        if (active && age < land) jig = toward0((sn(static_cast<i32>((static_cast<u32>(age) * 2400u) & 0xffffu)) * ((ps * 3) >> 2)) / 16384, 512);
+        box(frame, art::paper_l, prep_x + jig, art::string_1, art::zs + 410, ps, e4);
+        sx = prep_x + jig; sy = art::string_1; sz = art::zs + 410 + ((art::paper_h * ps) >> 10); sl = ps;
+    }
+    if (m == M::TACK) {
+        // MUTE: a felt strip across the strings at SPOT (encoder 2's mark)
+        const i32 ms = 500 + ((t[3] * 717) >> 10);
+        box(frame, art::mute_l, prep_x, art::string_1, art::zs + 410, ms, e4);
+        at(frame, art::mark_2, prep_x, art::string_1, art::zs + 300, unit, hair2);
+        sx = prep_x; sy = art::string_1; sz = art::zs + 410 + 3 * ms; sl = (ms * 600) >> 10;
+    }
+    if (m == M::BELL || m == M::PLUCK) {
+        // MASS: a wood screw through the strings at SPOT; PLUCK's fitting
+        // at its SPOT, the nail plucking beside it
+        const i32 ss = m == M::BELL ? 600 + ((t[3] * 717) >> 10) : 640;
+        at(frame, art::screw_shank, prep_x, 25 << 10, art::zs, ss, e4);
+        at(frame, art::screw_head, prep_x, 25 << 10, art::zs, ss, e4);
+        nut_at = prep_x; nut_lo = art::zs + 512; nut_hi = art::zs + ((art::screw_top * ss) >> 10) - 1024 - art::nut_h;
+        loose = t[5];
+        sx = prep_x; sy = 25 << 10; sz = art::zs + ((art::screw_top * ss) >> 10); sl = (ss * 500) >> 10;
+    }
+    if (m == M::BOLT) {
+        // MASS: a bolt through the strings at SPOT, its head under them
+        const i32 bs = 600 + ((t[3] * 717) >> 10);
+        at(frame, art::bolt_head_side, prep_x, 25 << 10, art::zs, bs, e4 + 1);
+        at(frame, art::bolt_head, prep_x, 25 << 10, art::zs, bs, e4);
+        at(frame, art::bolt_shank, prep_x, 25 << 10, art::zs, bs, e4);
+        nut_at = prep_x; nut_lo = art::zs + 512; nut_hi = art::zs + (((art::screw_top - 1024) * bs) >> 10) - 512 - art::nut_h;
+        loose = t[5];
+        sx = prep_x; sy = 25 << 10; sz = art::zs - (((8 << 10) - 2560) * bs >> 10); sl = (bs * 600) >> 10;
+    }
+    if (nut_at >= 0) {
+        i32 z = nut_lo + part(nut_hi - nut_lo, loose);
+        if (active && loose > 0 && age < land + 200)
+            z += toward0((sn(static_cast<i32>((static_cast<u32>(age) * 3100u) & 0xffffu)) * ((loose * 3) >> 1)) / 16384, 512);
+        at(frame, art::nut_side, nut_at, nut_y, z, unit, e2 + 1);
+        at(frame, art::nut, nut_at, nut_y, z, unit, e2);
+    }
+    if (m == M::PLANK) {
+        // BOLTS (encoder 2): bolts wedged among the strings by the bridge
+        if (t[5] > 0) {
+            const i32 bs = 300 + ((t[5] * 820) >> 10);
+            at(frame, art::plank_bolt_0, xb - (12 << 10), 25 << 10, art::zs, bs, e2);
+            at(frame, art::plank_bolt_1, xb - (19 << 10), 35 << 10, art::zs, bs, e2);
+        }
+        // BLOOM (encoder 1): felt laid against the bridge, which slows the
+        // strings setting each other ringing
+        box(frame, art::bfelt_l, xb - (3 << 10), art::string_1, art::zs + 410, 300 + ((t[4] * 717) >> 10), e1);
+        // AGE on the plank's felt pad
+        sx = art::hammer_x; sy = art::string_1; sz = plank_top; sl = plank_len;
+    }
+    if (m == M::BRUSH) {
+        // the brush on the strings, swept to SPOT (encoder 2's mark) over
+        // STROKE's time from as far back as STROKE reaches, and drawn back;
+        // BRISTLE (encoder 1) coarsens its bristles
+        const i32 to = lerp(62 << 10, xb - (10 << 10), t[5]);
+        const i32 travel = (6 << 10) + t[2] * 24;
+        const i32 stroke_t = secs(shape::along(shape::stroke, t[2] * 64)) + 34;
+        i32 swept = 0;
+        if (active) {
+            if (age < stroke_t) swept = (age * 1024) / stroke_t;
+            else swept = fall(age - stroke_t, 200) >> 5;
+            swept = toward0(part(travel, swept), 512);
+        }
+        const i32 bx = to - travel + swept;
+        const i32 ts = 600 + ((t[4] * 614) >> 10);
+        box(frame, art::tuft_l, bx, art::string_1, art::zs + 410, ts, e1);
+        const i32 hz = art::zs + 410 + ((art::tuft_h * ts) >> 10);
+        at(frame, art::handle_l, bx, art::string_1, hz, unit, e3);
+        at(frame, art::handle_t, bx, art::string_1, hz, unit, e3);
+        box(frame, art::brush_l, bx, art::string_1, hz, unit, e3);
+        at(frame, art::mark_2, to, art::string_1, art::zs + 300, unit, hair2);
+        // METAL: screws wedged among the top strings by the bridge, one by one
+        const i32 n = t[3] * 3;
+        for (u32 k = 0; k < 3; ++k) {
+            const i32 f = clampi(n - static_cast<i32>(k) * 1024, 0, 1024);
+            if (f > 0) at(frame, art::brush_screw_0 + (k == 2 ? art::brush_screw_2 - art::brush_screw_0 : k),
+                          xb - (screw_back[k] << 10), screw_y[k] << 10, art::zs, 300 + ((f * 700) >> 10), e4);
+        }
+        if (n > 0) {
+            const i32 sc = 300 + ((clampi(n, 0, 1024) * 700) >> 10);
+            sx = xb - (7 << 10); sy = 25 << 10; sz = art::zs + (11 * sc) / 2; sl = (sc * 400) >> 10;
+        }
+    }
+    if (m == M::LID) {
+        // the lid held over the strings (BOUNCE: the higher, the more it
+        // bounces), dropped on a hit onto its rubber pads (SPREAD, encoder
+        // 4: the springier, the longer the gap), bouncing each time a little
+        // lower, then lifted back once the case's ring has gone. SNAP
+        // (encoder 1): its hardwood lip.
+        const i32 sp = 500 + ((t[3] * 840) >> 10);
+        const i32 pad_top = art::zs + 410 + ((art::lidpad_h * sp) >> 10);
+        box(frame, art::lidpad_0_l, prep_x, art::string_0, art::zs + 410, sp, e4);
+        box(frame, art::lidpad_1_l, prep_x, art::string_2, art::zs + 410, sp, e4);
+        const i32 held = (6 << 10) + t[2] * 14;
+        i32 drop = 0;
+        if (active) {
+            const i32 g0 = secs(shape::along(shape::gap, t[3] * 64));
+            const i32 bounces = 1 + (raw[2] * 5 + 63) / 127;
+            i32 h = held, lift = 0;
+            if (age < 40) lift = held - (held * ((age * 32 / 40) * (age * 32 / 40))) / 1024;
+            else if (age < 2000) {
+                i32 tt = age - 40, gap_t = g0 + 40;
+                for (i32 b = 1; b < bounces; ++b) {
+                    gap_t = (gap_t * 82) / 100 + 8;
+                    h = h / 2;
+                    if (tt < gap_t) {
+                        const i32 p = (tt * 1024) / gap_t;
+                        lift = (h * ((4 * p * (1024 - p)) >> 10)) >> 10;
+                        break;
+                    }
+                    tt -= gap_t;
+                }
+            }
+            const i32 back = ring + 300;
+            if (age > back) lift = held - ((held * (fall(age - back, 120) >> 5)) >> 10);
+            drop = toward0(lift - held, 256);
+        }
+        const i32 lz = pad_top + held + drop;
+        box(frame, art::lid_l, prep_x, art::string_1, lz, unit, e3);
+        box(frame, art::lip_l, prep_x, art::string_1 + art::lid_d / 2, lz, 400 + ((t[4] * 624) >> 10), e1);
+        sx = prep_x; sy = art::string_0; sz = pad_top; sl = (sp * 400) >> 10;
+    }
+    if (m == M::CHAIN) {
+        // a chain of glass beads (BEADS, encoder 3) draped over the strings
+        // from its peg (SWELL, encoder 2: the higher its end is held, the
+        // more the knocks swell), hanging slacker with SHAKE (encoder 4),
+        // the jingles of METAL (encoder 1) among them; a hit sets them
+        // hopping over SHAKE's time, front-loaded or swelling
+        const i32 pegs = 600 + ((t[5] * 820) >> 10);
+        Chain c;
+        c.top = (art::peg_h * pegs) >> 10;
+        c.sag = 600 + t[3] * 2;
+        c.drape = (6 << 10) + t[3] * 6;
+        box(frame, art::peg_l, prep_x, chain_y0, 0, pegs, e2);
+        const i32 ox = iso_x(prep_x, 28 << 10), oy = iso_y(prep_x, 28 << 10, 7 << 10);
+        const i32 h = 360 + ((age_ * 500) >> 10);   // AGE: coarser, duller links
+        u32 key = mix(mix(mix(mix(0x9e3779b9u, prep_x), c.top), c.sag), h);
+        if (!key) key = 1;
+        if (frame.paths[3].key != key) {
+            i32 cx[32], cy[32];
+            for (u32 j = 0; j < 32; ++j) {
+                const i32 y = chain_y0 + ((chain_y1 - chain_y0) / 31) * static_cast<i32>(j);
+                cx[j] = iso_x(prep_x, y) - ox;
+                cy[j] = iso_y(prep_x, y, chain_z(c, y)) - oy;
+            }
+            ribbon(frame, 3, cx, cy, h);
+            frame.paths[3].key = key;
+        }
+        place(frame, 3, ox, oy, 2 * unit, hair1, stroke);
+        const i32 shake_t = secs(shape::along(shape::shake, t[3] * 64));
+        i32 env = 0;
+        if (active && age < shake_t + 120) {
+            const i32 pos = clampi((age * 1024) / (shake_t + 1), 0, 1024);
+            const i32 shape_ = (1024 - pos) + (((pos - (1024 - pos)) * t[5]) >> 10);
+            env = clampi(shape_, 0, 1024) * (age < shake_t ? 1024 : (fall(age - shake_t, 40) >> 5)) / 1024;
+        }
+        const i32 hop_h = (2 << 10) + t[3] * 2;
+        const i32 n = 1024 + t[2] * 7;
+        for (u32 k = 0; k < 8; ++k) {
+            const i32 f = clampi(n - static_cast<i32>(k) * 1024, 0, 1024);
+            const i32 y = (13 << 10) + static_cast<i32>(k) * (5 << 10);
+            i32 hop = 0;
+            if (env) hop = toward0(((hop_h * env) >> 10) * iabs(sn(static_cast<i32>((static_cast<u32>(age) * (90u + 23u * k)) & 0xffffu))) / 16384, 512);
+            if (f > 0) at(frame, art::bead_0 + k, prep_x, y, chain_z(c, y) + hop, 600 + ((f * 410) >> 10), e3);
+        }
+        const i32 nj = t[4] * 4;
+        for (u32 k = 0; k < 4; ++k) {
+            const i32 f = clampi(nj - static_cast<i32>(k) * 1024, 0, 1024);
+            const i32 y = (15 << 10) + 512 + static_cast<i32>(k) * (10 << 10);
+            i32 hop = 0;
+            if (env) hop = toward0(((hop_h * env) >> 11) * iabs(sn(static_cast<i32>((static_cast<u32>(age) * (70u + 31u * k)) & 0xffffu))) / 16384, 512);
+            if (f > 0) at(frame, art::jingle_0 + k, prep_x, y, chain_z(c, y) + 600 + hop, 400 + ((f * 600) >> 10), e1);
+        }
+    }
+    if (m == M::PLUCK) {
+        // the nail from beside the strings, its tip at the string by the
+        // fitting: NAIL from a round fingertip to a sharp quill; it pulls the
+        // string aside and lets it go. MUTE (encoder 1): a palm's felt laid
+        // against the bridge.
+        i32 py = art::string_1 + 1536;
+        if (active) {
+            if (age < 50) py += pull;
+            else py += toward0(((3 << 10) * (1024 - (fall(age - 50, 30) >> 5))) >> 10, 512)
+                     - toward0(((3 << 10) * (age > 400 ? 1024 - (fall(age - 400, 120) >> 5) : 0)) >> 10, 512);
+        }
+        const i32 tip = art::zs + 1024;
+        at(frame, art::fingertip, pluck_x, py, tip, 1100 - ((t[2] * 820) >> 10), e3);
+        at(frame, art::quill, pluck_x, py, tip, 350 + ((t[2] * 666) >> 10), e3);
+        if (t[4] > 0) box(frame, art::bfelt_l, xb - (3 << 10), art::string_1, art::zs + 410, 300 + ((t[4] * 717) >> 10), e1);
+    }
+    if (m == M::BOW) {
+        // the rosined thread (encoder 3, PRESS: slack to taut) round the
+        // middle string at SPOT (encoder 2's mark) out to its toggle
+        // (encoder 4, DRAW: the more thread to draw, the further out); a
+        // hit draws it out over the draw and lets it back
+        at(frame, art::mark_2, prep_x, art::string_1, art::zs + 300, unit, hair2);
+        i32 drawn = 0;
+        if (active) {
+            drawn = age < draw_t ? (age * 1024) / (draw_t + 1) : fall(age - draw_t, 300) >> 5;
+            drawn = toward0(drawn * 8, 512);
+        }
+        const i32 yt = (62 << 10) + t[3] * 12 + drawn;
+        const i32 zt = 6 << 10;
+        box(frame, art::toggle_l, prep_x, yt, zt, unit, e4);
+        const i32 sag = 300 + (1024 - t[2]) * 5;
+        const i32 ox = iso_x(prep_x, (yt + art::string_1) / 2), oy = iso_y(prep_x, (yt + art::string_1) / 2, (art::zs + zt) / 2);
+        u32 key = mix(mix(mix(0x01000193u, prep_x), yt), sag);
+        if (!key) key = 1;
+        if (frame.paths[3].key != key) {
+            i32 cx[32], cy[32];
+            for (u32 j = 0; j < 32; ++j) {
+                const i32 u = static_cast<i32>(j) * 1024 / 31;
+                const i32 y = art::string_1 + part(yt - art::string_1, u);
+                const i32 z = art::zs + part(zt - art::zs, u) - part(sag, sn(u * 32) >> 4);
+                cx[j] = iso_x(prep_x, y) - ox;
+                cy[j] = iso_y(prep_x, y, z) - oy;
+            }
+            ribbon(frame, 3, cx, cy, 300);
+            frame.paths[3].key = key;
+        }
+        place(frame, 3, ox, oy, 2 * unit, thread, stroke);
+        sx = prep_x; sy = yt; sz = zt + 1536; sl = 600;
+    }
+    if (m != M::CHAIN && m != M::BOW) {
+        // the outline parked: a small ring, so it stays a valid outline
         if (frame.paths[3].key != 7u) {
             for (u32 i = 0; i < 64; ++i) {
                 const i32 ph = static_cast<i32>(i) * 1024;
@@ -539,269 +746,10 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
             frame.paths[3].key = 7u;
         }
         hide(frame, 3);
-        hide(frame, art::tuning_lever);
     }
-    const i32 size = look.size >= 0 ? t[look.size] : 512;
-    const i32 here = swing_at(spot_y, top, bridge, amp);   // the string's swing where the preparation sits
-    const i32 sx = art::string_x + here;
-    if (m == M::THUD || m == M::TOM) {
-        // RUBBER: a rubber wedge between the unisons, close by the hammer
-        const i32 sc = 400 + ((size * 700) >> 10);
-        put(frame, art::rubber, sx, spot_y, sc, 7);
-        put(frame, art::rubber_lip, sx, spot_y, sc, 5);
-    }
-    if (m == M::RATTLE) {
-        // PAPER: a strip woven through the strings at SPOT, wider the more
-        // of it; it chatters on a hit. RING: a felt mute by the bridge, drawn
-        // out as the note is let ring
-        const i32 jig = active && age < hold ? ((sn(static_cast<i32>((static_cast<u32>(age) * 2400u) & 0xffffu)) * ((size * 30) >> 10)) >> 14) : 0;
-        put(frame, art::paper, sx, spot_y, 420 + ((size * 600) >> 10), 7, snap(jig, 10));
-        put(frame, art::mute, art::string_x + (t[5] * 12), bridge - (10 << 10), unit, 5);
-        put(frame, art::mute_line, art::string_x + (t[5] * 12), bridge - (10 << 10), unit, 4);
-    }
-    if (m == M::TACK || m == M::PLUCK) {
-        // MUTE: a felt strip across the strings, thicker the more it mutes
-        const i32 my = m == M::TACK ? spot_y : bridge - (12 << 10);
-        const i32 mt = m == M::TACK ? t[3] : t[4];
-        put(frame, art::mute, art::string_x + swing_at(my, top, bridge, amp), my, 560 + ((mt * 640) >> 10), 6);
-        put(frame, art::mute_line, art::string_x + swing_at(my, top, bridge, amp), my, 560 + ((mt * 640) >> 10), 4);
-    }
-    if (m == M::BELL || m == M::BOLT || m == M::PLUCK || m == M::PLANK) {
-        // MASS: a screw or bolt through the strings at SPOT, larger with its
-        // mass; LOOSE backs it off and cocks it, and it chatters on a hit
-        const i32 loose = m == M::PLUCK ? t[5] : m == M::PLANK ? 0 : t[5];
-        i32 sc = 600 + ((size * 640) >> 10);
-        i32 py = spot_y, px = sx;
-        if (m == M::PLUCK) { sc = 640; py = bridge - (26 << 10); px = art::string_x + swing_at(py, top, bridge, amp); }
-        if (m == M::PLANK) { sc = 520 + ((t[5] * 500) >> 10); py = art::strike_y + (40 << 10); px = art::string_x + swing_at(py, top, bridge, amp); }
-        const i32 chat = active && age < hold + 200 && loose > 0 ? snap((sn(static_cast<i32>((static_cast<u32>(age) * 3100u) & 0xffffu)) * ((loose * 40) >> 10)) >> 14, 10) : 0;
-        const i32 cock = (loose * 120) >> 10;
-        if (m == M::BELL) {
-            // backed out of the strings as a whole
-            put(frame, art::screw_shank, px + loose * 7, py, sc, 7, cock + chat);
-            put(frame, art::screw_thread, px + loose * 7, py, sc, 4, cock + chat);
-            put(frame, art::screw_head, px + loose * 7, py, sc, 7, cock + chat);
-        } else {
-            const i32 shade = m == M::PLANK ? (t[5] > 0 ? 2 + ((t[5] * 5) >> 10) : 0) : 7;
-            put_shaded(frame, art::bolt_shank, px, py, sc, shade, cock / 3);
-            put_shaded(frame, art::bolt_head, px, py, sc, shade, cock / 3);
-            // the nut, backed off along the bolt and cocked on it
-            put_shaded(frame, art::bolt_nut, px + ((loose * 9 * sc) >> 10), py, sc, shade, cock + chat);
-            put_shaded(frame, art::bolt_nut_face, px + ((loose * 9 * sc) >> 10), py, sc, shade - 3, cock + chat);
-        }
-    }
-    if (m == M::BRUSH) {
-        // the brush at SPOT, its bristles on the string; a hit sweeps it up
-        // the string over STROKE's time; BRISTLE splays its bristles; METAL
-        // the screws wedged in the strings above
-        const i32 stroke_t = secs(shape::along(shape::stroke, t[2] * 64));
-        const i32 travel = (10 << 10) + t[2] * 26;
-        i32 up = 0;
-        if (active) {
-            if (age < stroke_t + 40) up = (travel * clampi((age * 1024) / (stroke_t + 40), 0, 1024)) / 1024;
-            else up = (travel * (fall(age - stroke_t - 40, 160) >> 5)) / 1024;
-            up = snap(up, 512);
-        }
-        const i32 by = spot_y + t[2] * 10 - up, bx = art::string_x - gap / 2 - 1024 + swing_at(by, top, bridge, amp);   // a longer stroke starts lower
-        put(frame, art::brush_handle, bx, by, unit, 6, 150);
-        put(frame, art::brush_ferrule, bx, by, unit, 5, 150);
-        put(frame, art::brush_block, bx, by, unit, 6, 150);
-        for (u32 k = 0; k < 4; ++k) {
-            const i32 splay = ((static_cast<i32>(k) * 2 - 3) * t[4] * 70) >> 10;   // tenths
-            put(frame, art::brush_bristle_0 + k, bx, by, unit, 7, 150 - splay);
-        }
-        for (u32 k = 0; k < 3; ++k) {
-            const i32 y = art::damp_y + ((18 + 14 * static_cast<i32>(k)) << 10);
-            put_shaded(frame, art::string_screw_0 + k, art::string_x + swing_at(y, top, bridge, amp), y, 600 + ((t[3] * 400) >> 10),
-                       (t[3] * 9 + 1000 - static_cast<i32>(k) * 2048) >> 10, 450);
-        }
-    }
-    if (m == M::CHAIN) {
-        // a chain of glass beads draped over the strings, hanging off to the
-        // right: BEADS how many, TUNE how small (the smaller, the higher),
-        // METAL the jingles among them; a hit sets them hopping, front-loaded
-        // or swelling (SWELL) over SHAKE's time
-        const i32 n = 3 * 1024 + t[2] * 7;
-        const i32 bead_s = 1300 - ((t[0] * 600) >> 10);
-        const i32 shake_t = secs(shape::along(shape::shake, t[3] * 64));
-        for (u32 k = 0; k < 10; ++k) {
-            const i32 f = clampi(n - static_cast<i32>(k) * 1024, 0, 1024);
-            // along a catenary from the string down to the right
-            const i32 j = static_cast<i32>(k);
-            // SHAKE lets the chain hang slacker; SWELL lifts its far end
-            const i32 slack = 600 + t[3];
-            const i32 x = art::string_x - ((j * 7 + 2) << 10) * bead_s / 1024;
-            const i32 y = art::strike_y + (30 << 10) + (((j * j * 140) << 10) / 1024 * bead_s / 1024) * slack / 1024 - j * t[5] * 2;
-            i32 hop = 0;
-            if (active && age < shake_t + 120) {
-                const i32 pos = clampi((age * 1024) / (shake_t + 1), 0, 1024);
-                const i32 shape_ = (1024 - pos) + (((pos - (1024 - pos)) * t[5]) >> 10);
-                const i32 env = clampi(shape_, 0, 1024) * (age < shake_t ? 1024 : (fall(age - shake_t, 40) >> 5)) / 1024;
-                const i32 h = (3 << 10) + t[3] * 4;
-                hop = snap((h * env / 1024) * iabs(sn(static_cast<i32>((static_cast<u32>(age) * (90u + 23u * k)) & 0xffffu))) / 16384, 512);
-            }
-            put_shaded(frame, art::bead_0 + k, x, y - hop, bead_s, (f * 7) >> 10);
-        }
-        for (u32 k = 0; k < 4; ++k) {
-            const i32 j = static_cast<i32>(k) * 2 + 1;
-            const i32 slack = 600 + t[3];
-            const i32 x = art::string_x - ((j * 7 + 6) << 10) * bead_s / 1024;
-            const i32 y = art::strike_y + (34 << 10) + (((j * j * 140) << 10) / 1024 * bead_s / 1024) * slack / 1024 - j * t[5] * 2;
-            put_shaded(frame, art::jingle_0 + k, x, y, 700 + ((t[4] * 500) >> 10), t[4] > 0 ? (t[4] * 8 + 1100 - static_cast<i32>(k) * 1536) >> 10 : 0, 300);
-        }
-    }
-    if (m == M::PLUCK) {
-        // the quill from up and to the right, its tip at SPOT: NAIL from a
-        // rounded fingertip pad to a sharp quill; it pulls and lets go
-        i32 qx = art::string_x - gap / 2 - 512, qy = spot_y;
-        if (active) {
-            i32 pull = 0;
-            if (age < 24) pull = ((3 << 10) * age) / 24;
-            else pull = snap((((10 << 10)) * (1024 - (fall(age - 24, 30) >> 5))) / 1024, 512) - (((10 << 10) * (age > 400 ? 1024 - (fall(age - 400, 120) >> 5) : 0)) / 1024);
-            qx -= pull;
-            qy -= pull / 2;
-        }
-        put(frame, art::quill, qx, qy, unit, 6);
-        put(frame, art::quill_vane, qx, qy, unit, 4);
-        put_shaded(frame, art::quill_tip, qx, qy, 700 + ((t[2] * 500) >> 10), (t[2] * 8) >> 10);
-        put_shaded(frame, art::quill_nail, qx, qy, 1200 - ((t[2] * 500) >> 10), 7 - ((t[2] * 8) >> 10));
-    }
-    if (m == M::BOW) {
-        // the rosined thread looped round the string at SPOT and out to its
-        // toggle; PRESS pulls it taut, DRAW how far a hit draws it; BEND turns
-        // the tuning lever on the pin, and further over the draw
-        const i32 draw_t = hold;
-        i32 drawn = 0;
-        if (active) {
-            if (age < draw_t) drawn = ((age * 1024) / (draw_t + 1));
-            else drawn = fall(age - draw_t, 300) >> 5;
-            drawn = snap(drawn, 16);
-        }
-        const i32 reach_ = (8 << 10) + t[3] * 8;              // DRAW: how far it goes
-        const i32 tx = art::string_x - (34 << 10) - t[3] * 12 - ((reach_ * drawn) >> 10);
-        const i32 ty = spot_y + (8 << 10) - ((t[2] * 6));
-        put(frame, art::toggle, tx, ty, unit, 6);
-        put(frame, art::toggle_grain, tx, ty, unit, 4);
-        // the thread: from the loop round the string to the toggle, sagging
-        // when slack (PRESS low), straight when taut
-        const i32 sag = (7 << 10) - t[2] * 6;
-        u32 key = 0x01000193u;
-        key = (key ^ static_cast<u32>(tx)) * 16777619u;
-        key = (key ^ static_cast<u32>(sag)) * 16777619u;
-        key = (key ^ static_cast<u32>(spot_y)) * 16777619u;
-        key = (key ^ static_cast<u32>(here)) * 16777619u;
-        if (!key) key = 1;
-        const i32 x0 = sx, y0 = spot_y;
-        const i32 ox = (x0 + tx) / 2, oy = (y0 + ty) / 2;
-        if (frame.paths[3].key != key) {
-            Frame::path_type& o = frame.paths[3];
-            // round the string (a small loop), then out to the toggle and back, 1/2 size
-            for (u32 i = 0; i < 64; ++i) {
-                i32 x, y;
-                if (i < 12) {
-                    // the loop round the unisons, open on the left where the thread leaves
-                    const i32 ph = 27307 - static_cast<i32>(i) * 54613 / 11;   // from its lower left round to its upper left
-                    x = x0 + ((((gap / 2) + 1536) * cs(ph)) >> 14);
-                    y = y0 + ((1536 * sn(ph)) >> 14);
-                } else {
-                    // out along the top edge and back along the bottom, 0.5 px apart
-                    const u32 j = i < 38 ? i - 12 : 63 - i;   // 0..25 and back 25..0
-                    const i32 u = static_cast<i32>(j) * 1024 / 25;
-                    const i32 bow_ = (sag * ((4 * u * (1024 - u)) >> 10)) >> 10;
-                    x = x0 - ((gap / 2 + 1536)) + (((tx - x0 + gap / 2 + 1536) * u) >> 10);
-                    y = y0 + (((ty - y0) * u) >> 10) + bow_ + (i < 38 ? -256 : 256);
-                }
-                o.points[i].x = (x - ox) / 2;
-                o.points[i].y = (y - oy) / 2;
-            }
-            o.key = key;
-        }
-        place(frame, 3, ox, oy, 2 * unit, 10, stroke);
-    }
-    {
-        // the tuning lever on the pin: still unless BOW bends the pitch
-        i32 la = 0;
-        if (m == M::BOW) {
-            const i32 bend_ = t[4] - 512;   // -512..512
-            const i32 drawn = active && age < hold ? (age * 1024) / (hold + 1) : (active ? fall(age - hold, 300) >> 5 : 0);
-            la = snap((bend_ * 200) / 512 + ((bend_ * 100 / 512) * drawn) / 1024, 4);
-            put(frame, art::tuning_lever, art::tune_pin_x, art::tune_pin_y, unit, 6, la);
-        }
-    }
-    {
-        // the fallboard: open against the panel (LID: held at SPREAD's height,
-        // TUNE its length; a hit drops it to the keys, where it bounces
-        // BOUNCE times, each gap and height a little smaller)
-        i32 ang = -840;   // tenths: open, standing up against the panel
-        i32 len = unit;
-        if (m == M::LID) {
-            len = 860 + ((t[0] * 300) >> 10);
-            const i32 open = 120 + ((t[3] * 450) >> 10);    // SPREAD: how high it is held
-            ang = -open;
-            if (active) {
-                // the fall: the first gap's worth of time, as a dropped board falls
-                const i32 g0 = secs(shape::along(shape::gap, t[3] * 64));
-                const i32 bounces = 1 + ((raw[2] * 5 + 63) / 127);
-                i32 at = 0, gap_t = g0 + 40, h = open;
-                i32 lift_ = 0;
-                if (age < 40) lift_ = open - (open * ((age * 1024 / 40) * (age * 1024 / 40) / 1024)) / 1024;
-                else {
-                    i32 tt = age - 40;
-                    lift_ = 0;
-                    for (i32 b = 1; b < bounces; ++b) {
-                        gap_t = (gap_t * 82) / 100 + 8;
-                        h = (h * 50) / 100;
-                        if (tt < gap_t) {
-                            const i32 p = (tt * 1024) / gap_t;
-                            lift_ = (h * ((4 * p * (1024 - p)) >> 10)) >> 10;
-                            break;
-                        }
-                        tt -= gap_t;
-                    }
-                    if (age > 2000) lift_ = 0;
-                    (void)at;
-                }
-                ang = -lift_;
-                // and it is lifted back again, slowly, once its ring has gone
-                const i32 back = secs(shape::along(shape::damper[M::LID], t[1] * 64)) + 300;
-                if (age > back) ang = -((open * (1024 - (fall(age - back, 120) >> 5))) >> 10);
-            }
-            ang = snap(ang, 4);
-            // BOUNCE: the felt it lands on, thinner the more it bounces; SNAP
-            // the board's brass lip; HOLLOW the key slip drawn away
-            put(frame, art::landing_felt, art::hinge_x + (50 << 10), art::key_top - (4 << 10), 1400 - ((t[2] * 700) >> 10), 5);
-        }
-        put(frame, art::fallboard, art::hinge_x, art::hinge_y, len, 6, ang);
-        put(frame, art::fallboard_lip, art::hinge_x, art::hinge_y, len, 3, ang);
-        // SNAP: a hardwood edge on the board's lip, growing from nothing
-        if (m == M::LID) put_shaded(frame, art::fallboard_edge, art::hinge_x, art::hinge_y, (len * (300 + ((t[4] * 724) >> 10))) >> 10, 2 + ((t[4] * 6) >> 10), ang);
-        else hide(frame, art::fallboard_edge);
-        // the key slip; HOLLOW draws it away from the keys, opening the case
-        put(frame, art::key_slip, art::key_front_x + (m == M::LID ? t[5] * 9 : 0), (198 << 10), unit, 4);
-    }
-    if (m == M::PLANK) {
-        // the plank laid on the keys' fronts, pressing them as it settles (BLOOM)
-        const i32 bloom_t = secs(shape::along(shape::bloom, t[4] * 64));
-        i32 down = 0;
-        if (active) down = age < hold ? (1024 - fall(age, bloom_t / 3 + 8) / 32) : (fall(age - hold, 42) >> 5);
-        const i32 ka = (dip * 22) / 1024;
-        i32 px, py;
-        spin(turned(ka), art::key_front_x - (30 << 10) - art::key_x, art::key_top - art::key_y, px, py);
-        const i32 rise = ((6 << 10) * (1024 - down)) >> 10;
-        (void)rise;
-        const i32 lifted = snap((t[4] * 8) * (1024 - down) / 1024, 128);   // BLOOM: held higher, it settles slower
-        put(frame, art::plank, art::key_x + px, art::key_y + py - (1 << 10) - lifted, unit, 6, ka);
-        put(frame, art::plank_grain, art::key_x + px, art::key_y + py - (1 << 10) - lifted, unit, 4, ka);
-    }
-
-    {
-        // the player's spools: the paper drawn on by a notch each note, eased
-        // over the note's first 0.15 s; the take-up spool, smaller, turns further
-        const i32 ease = active ? 1024 - (fall(age, 40) >> 5) : 1024;
-        const i32 r = snap(state.roll + ((120 * ease) >> 10), 4);
-        put(frame, art::roll_spokes, art::roll_x, art::roll_y, unit, 5, -r);
-        put(frame, art::take_up_spokes, art::take_up_x, art::take_up_y, unit, 5, -(r * 4) / 3);
-    }
+    // --- encoder 4, page 2: AGE, a dark seam across the preparation (old
+    // rubber's crack, old paper's crease, a screw's rust)
+    if (age_ > 0 && sl > 0) at(frame, art::seam, sx, sy, sz, (sl * (200 + ((age_ * 824) >> 10))) >> 10, black);
 
     // --- the header: both rows, the edited one bright; while Shift is held
     // both rows show it: the key's mixer channel (MACHINE, CHOKE, PAN, LEVEL)

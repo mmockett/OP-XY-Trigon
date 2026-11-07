@@ -1,6 +1,6 @@
 # FLICKER
 
-![FLICKER's screen: a strip of 16 mm sound film running through a projector's sound head, the kick drawn on its soundtrack in every frame, the exciter lamp's slit across the track](docs/screen.png)
+![FLICKER's screen: four frames of 16 mm sound film on an isometric slat, the kick drawn on the soundtrack of every frame, a small gate across the film with the slit's light on the track](docs/screen.png)
 
 A drum kit drawn on film. Each of the 24 keys is a shape inked onto the
 optical soundtrack of a 16 mm film, the same shape in every frame, and each
@@ -35,7 +35,9 @@ high boop and a single snap).
   to come back. Both rows are drawn in the header, the one the encoders turn
   bright. The second row ends INK, FLUTTER and DUST on every model.
 - **Choose a key's model:** select the key, hold **Shift** and turn
-  **encoder 1** (MACHINE). Any key can hold any of the twelve.
+  **encoder 1** (MACHINE). Any key can hold any of the twelve; the longer
+  names show short there: swp (SWEEP), scrch (SCRATCH), strks (STROKES), orn
+  (ORNAMENT) and stipl (STIPPLE).
 - **Its mixer channel, on Shift's first row:** **encoder 2** puts the key in
   choke group 1, 2 or 3, or none (CHOKE: the hats start in group 1);
   **encoder 3** pans it (PAN); **encoder 4** sets its level (LEVEL, 0 dB
@@ -83,7 +85,7 @@ Captions are the header's, at 0, 25, 50, 75 and 100 of each control's travel, wi
 | Control | Model | 0 / 25 / 50 / 75 / 100 | Measured at 0 / 50 / 100 | What it does |
 | --- | --- | --- | --- | --- |
 | PITCH | SWEEP | `B0` `E1` `A1` `D2` `G2` | centroid 31, 56, 101 Hz; 40 dB in 0.86, 0.83, 0.84 s | The note the kick falls to. On screen the beads' spacing. |
-| DECAY | SWEEP | `0.28s` `0.55s` `1.1s` `2.1s` `4.1s` | centroid 49, 47, 47 Hz; 40 dB in 0.28, 1.06, 4.08 s | How long the drawing tapers. On screen the taper's length. |
+| DECAY | SWEEP | `0.28s` `0.55s` `1.1s` `2.1s` `4.1s` | centroid 49, 47, 47 Hz; 40 dB in 0.28, 1.06, 4.08 s | How long the drawing tapers. On screen the taper's length, and where its pencil guides meet. |
 | BEND | SWEEP | `0st` `12st` `24st` `36st` `48st` | centroid 47, 47, 47 Hz; 40 dB in 0.84, 0.83, 0.83 s | How far above the note it starts, in semitones, falling fast: from a flat sine to a deep drop. On screen the spacing widens along the frame. |
 | SHAPE | SWEEP | `0` `25` `50` `75` `100` | centroid 47, 49, 68 Hz; 40 dB in 0.82, 0.83, 0.83 s | Sine, then triangle, then a drawn square with sloped edges: more harmonics a small speaker carries. On screen the beads turn to diamonds and blocks. |
 | CLICK | SWEEP | `0` `25` `50` `75` `100` | centroid 47, 47, 47 Hz; 40 dB in 0.83, 0.82, 0.83 s | An inked tick and the scratch of the pen at the start, from none to a hard beater. On screen a tick ahead of the waves. |
@@ -104,7 +106,7 @@ Captions are the header's, at 0, 25, 50, 75 and 100 of each control's travel, wi
 | SCATTER | STROKES | `0` `25` `50` `75` `100` | centroid 2.2k, 2.2k, 2.2k Hz; 40 dB in 0.49, 0.49, 0.49 s | From one tight clap to a loose crowd: strokes later and uneven, each in its own tone, the smear many hands. |
 | PITCH | DOT | `300` `594` `1.2k` `2.3k` `4.5k` | centroid 301, 998, 2.5k Hz; 40 dB in 0.21, 0.17, 0.16 s | The ring the dot strikes. |
 | DECAY | DOT | `46ms` `0.12s` `0.30s` `0.73s` `1.8s` | centroid 1.5k, 881, 977 Hz; 40 dB in 0.12, 0.23, 1.34 s | How long it rings. |
-| SIZE | DOT | `0.1ms` `0.2ms` `0.5ms` `1.1ms` `2.5ms` | centroid 1.6k, 1.0k, 657 Hz; 40 dB in 0.16, 0.16, 0.16 s | A small dot rings bright; a large one knocks the wood under it. |
+| SIZE | DOT | `0.1` `0.2` `0.5` `1.1` `2.5` (title: size ms) | centroid 1.6k, 1.0k, 657 Hz; 40 dB in 0.16, 0.16, 0.16 s | A small dot rings bright; a large one knocks the wood under it. |
 | ECHO | DOT | `0` `2` `3` `4` `6` | centroid 1.6k, 1.4k, 1.3k Hz; 40 dB in 0.15, 0.22, 0.30 s | Dots after the first, each fainter. |
 | GAP | DOT | `12ms` `26ms` `55ms` `0.12s` `0.25s` | centroid 1.7k, 1.4k, 1.5k Hz; 40 dB in 0.17, 0.21, 0.61 s | Time between the echoes. |
 | PITCH | CARD | `F#3` `E4` `D#5` `D6` `C#7` | centroid 350, 1.2k, 3.8k Hz; 40 dB in 0.48, 0.48, 0.48 s | The lower card's note. |
@@ -142,9 +144,9 @@ Captions are the header's, at 0, 25, 50, 75 and 100 of each control's travel, wi
 | RATE | CLAW | `6fps` `11fps` `19fps` `34fps` `60fps` | centroid 881, 882, 882 Hz; 40 dB in 0.64, 0.68, 0.72 s | Pulls a second. |
 | SWELL | CLAW | `-100` `-50` `+1` `+50` `+100` | centroid 881, 883, 886 Hz; 40 dB in 0.69, 0.69, 0.73 s | A roll that dies away (-100), an even one (0), or a riser that quickens and swells (+100). |
 | GRIT | CLAW | `0` `25` `50` `75` `100` | centroid 869, 933, 1.1k Hz; 40 dB in 0.68, 0.68, 0.69 s | Each tick from clean to gritty. |
-| INK | all | `0` `25` `50` `75` `100` | kick centroid 47, 47, 48 Hz; hat 5.3k, 9.5k, 9.6k Hz | The ink's weight: thin ink bleeds soft (to 21), full ink is crisp, heavy ink spills past the track's edges and is cut flat, harder as it grows. On screen the drawing pales, then grows and flattens at the edges. |
-| FLUTTER | all | `0` `25` `50` `75` `100` | kick centroid 47, 49, 49 Hz; hat 9.5k, 9.6k, 9.5k Hz | The projector's claw at 24 Hz in the film's speed and light, and the loop's wow: every pitch wavers, the light flickers. On screen the slack loop hangs deeper. |
-| DUST | all | `0` `25` `50` `75` `100` | kick centroid 47, 98, 81 Hz; hat 9.5k, 1.0k, 1.1k Hz | Specks that pop, grain that crackles, a hair across the track, the same each time the key plays. On screen specks bite the drawing and a hair lies on each frame. |
+| INK | all | `0` `25` `50` `75` `100` | kick centroid 47, 47, 48 Hz; hat 5.3k, 9.5k, 9.6k Hz | The ink's weight: thin ink bleeds soft (to 21), full ink is crisp, heavy ink spills past the track's edges and is cut flat, harder as it grows. On screen the weight of the ink and of the pencil guides, then a drawing that grows and flattens at the edges. |
+| FLUTTER | all | `0` `25` `50` `75` `100` | kick centroid 47, 49, 49 Hz; hat 9.5k, 9.6k, 9.5k Hz | The projector's claw at 24 Hz in the film's speed and light, and the loop's wow: every pitch wavers, the light flickers. On screen the gate's bar rises up its posts and chatters as the film is pulled. |
+| DUST | all | `0` `25` `50` `75` `100` | kick centroid 47, 98, 81 Hz; hat 9.5k, 1.0k, 1.1k Hz | Specks that pop, grain that crackles, a hair across the track, the same each time the key plays. On screen specks settle on every frame and bite the drawing. |
 
 ## Presets
 
@@ -255,35 +257,41 @@ every sound is drawn from its shapes and the projector's physics.
 
 ![Every model at its defaults and 60 ms after a hit, at 1:1](docs/controls-1x.png)
 
-A strip of 16 mm sound film runs right to left, face on, through a
-projector's sound head. Its proportions are the real film's: a frame every
-7.62 mm (72 px), one perforation a frame on the frame line, as single-perforated
-sound film has them, the empty picture frames with their rounded corners, and
-along the other edge the soundtrack, drawn at twice its real width so the
-drawing reads. On the track the selected key's sound is drawn as a white
-bilateral shape, the same drawing in every frame, as a variable-area track
-looks: beads and diamonds for waves, blocks for drawn squares, combs for
-ruled lines, dots for dots. Over the gate stands the exciter lamp's house,
-louvred, with its optical tube and focusing collar coming down to the slit,
-a bright line across the track; the photocell's cup sits under the film. At
-the gate's edges toothed sprocket rollers mesh the perforations; the
-castings either side carry the flywheel that steadies the film, and the
-incoming film hangs in a slack loop under its feed sprocket.
+Four frames of 16 mm sound film lie on a near-black slat, drawn isometric,
+with a small gate bridging the film at its middle. Along the film's back edge
+run its perforations and empty picture frames, dim; along its front edge, the
+soundtrack, where the selected key's sound is drawn in fine white line, the
+same drawing in every frame, as a variable-area track looks: beads and
+diamonds for waves, blocks for drawn squares, combs for ruled lines, dots for
+dots. Under the clear film the slat carries an animator's pencil guides for
+each frame and a scale along its front edge, and under the gate the slit's
+light crosses the track.
 
-A hit pulls exactly one frame through the gate, eased over the hit's own
-length: the drawing slides under the slit and the next frame's identical
-drawing takes its place, so nothing jumps; the rollers turn five teeth and
-the flywheel a spoke. Every control of the drawing reshapes it: PITCH the
-spacing of its waves, DECAY its taper, BEND, SNAP and SLIDE the spacing's
-gradient, SHAPE its edges, CLICK and SLAP a tick ahead of it, and each
-model's own controls its own part. INK pales the drawing as the ink thins,
-then draws it taller until it spills past the track's edges and flattens
-there; FLUTTER lowers the slack loop; DUST bites specks out of the drawing
-and lays a hair on each frame; SLIT widens the slit's line; TUNE moves
-PITCH's spacing and its caption. Only the selected key's notes move it, a
-still screen changes nothing, and reduced motion keeps it still. The
-castings are filled dark grey; everything that moves is drawn in fine
-outline, 1 px wide.
+A hit pulls the film one frame along, easing in and settling over the hit's
+own length: the drawing passes under the slit as it plays, and the next
+frame's identical drawing takes its place. The frame at the near end slips
+over the slat's edge into the dark as a new one comes up over the far end.
+Only the selected key's notes pull it, a still screen changes nothing, and
+reduced motion keeps it still.
+
+Each part takes the grey of the encoder that moves it, on both pages:
+
+- **The drawing** (encoder 1, its outline): PITCH spaces its waves, and on the
+  second page the model's own control (CLICK, GRAIN, SLAP and the rest) is a
+  feature of the drawing.
+- **The pencil guides** (encoder 2, dark grey): DECAY sets where the guides of
+  the taper meet. INK sets the weight of the guides and of the ink; heavy ink
+  also draws taller, until it spills past the track's edges and is cut flat.
+- **The gate** (encoder 3, mid grey): FLUTTER lifts its bar up its posts,
+  away from the film, and a lifted bar chatters as the film is pulled. On the
+  first page the model's third control shows in the drawing: BEND as the
+  crowding of its first waves against the scale.
+- **The dust** (encoder 4, light grey): DUST settles specks on the film, the
+  same on every frame, more and larger as it rises, and bites them out of the
+  drawing. On the first page the model's fourth control shows in the
+  drawing's form: SHAPE takes it from round beads to blocks.
+
+SLIT widens the slit's line; TUNE moves PITCH's spacing and its caption.
 
 Contact sheets of each model's controls at 0, 50 and 100, its hits and both
 Shift rows, at 1:1: [docs/sheets/](docs/sheets/).
@@ -325,7 +333,7 @@ itself. No divides run per sample, and nothing is floating point.
 ## Memory
 
 105.1 KiB of the 2032 KiB module region (`sdk.py test --firmware`): the
-code, the tables, the screen's artwork (26 KB) and its state, and 16 voices
+code, the tables, the screen's artwork (24 KB) and its state, and 16 voices
 and a spare at 520 bytes each.
 
 ## Building

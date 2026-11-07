@@ -20,7 +20,7 @@
 namespace {
 using namespace opxy::draw;
 typedef dust::Frame F;
-const opxy::i32 apart = unit / 8;   // path units (Q10): the outlines are drawn at twice this on screen
+const opxy::i32 apart = unit / 8;   // path units (Q10): the outlines are drawn at unit scale, so 1/8 px
 int failures = 0;
 const unsigned models = dust::kit::models;
 unsigned char defaults(unsigned m, unsigned s) { return dust::kit::model[m].defaults[s]; }
@@ -181,8 +181,9 @@ int main() {
             }
     }
     for (const std::string& v : values) {
-        const double w = width(v.c_str() + 5, 20) * std::atoi(std::string(v, 0, 4).c_str()) / 1024.0;
-        if (w < 0 || w > 53.0) { std::printf("caption '%s' is %.1f px wide as drawn (at most 53)\n", v.c_str() + 5, w); ++failures; }
+        // at the header's full 20 px: the OP-XY draws header values at full size, whatever their scale
+        const double w = width(v.c_str() + 5, 20);
+        if (w < 0 || w > 53.8) { std::printf("caption '%s' is %.1f px wide at 20 px (at most 53)\n", v.c_str() + 5, w); ++failures; }
     }
     for (const std::string& t : titles) {
         const double w = width(t.c_str(), 10);
