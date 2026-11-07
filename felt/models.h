@@ -62,24 +62,26 @@ inline void string_rest(Voice& v) {
     v.spec_next = last < v.spec.partials ? last + 1 : 0;
 }
 // The pedal: the sympathetic strings an octave, a twelfth and two octaves
-// over lf0, and one neighbouring key, ringing for 1.5..4 s; and every damper
-// lifted, so the struck string's own damper barely lands.
+// over lf0 (a bell's own unison in place of the two octaves), ringing for
+// 1.5..4 s; and every damper lifted, so the struck string's own damper
+// barely lands.
 static __attribute__((noinline)) void pedal_strings(Voice& v, i32 lf0, i32 pedal) {
     v.npedal = 0;
     v.pedal_g = 0;
     if (pedal <= 0) return;
     // A bell's or a gong's partials meet the strings off their pitch and
     // barely move them: the prepared note's own unison answers there, in place
-    // of the neighbouring key. A brush's noise meets them everywhere, faintly.
-    static const i32 ratio[2][4] = {{L(2.0), L(3.0), L(4.0), L(2.0 * 1.0594630943592953)}, {L(2.0), L(3.0), L(4.0), 0}};
+    // of the two octaves. A brush's noise meets them everywhere, faintly.
+    static const i32 ratio[2][3] = {{L(2.0), L(3.0), L(4.0)}, {L(2.0), L(3.0), 0}};
     // they ring a long while at their own pitch, so they answer loudly: coupled
     // gently, a halo a few dB under the note rather than a sound of its own
-    static const i32 coupling[12] = {Q31(0.0008), Q31(0.0008), Q31(0.0008), Q31(0.0008), Q31(0.0008), Q31(0.0002),
-                                     Q31(0.0035), Q31(0.0008), Q31(0.0035), Q31(0.0002), Q31(0.0008), Q31(0.0008)};
+    // (three strings, each coupled a little more than when there were four)
+    static const i32 coupling[12] = {Q31(0.00092), Q31(0.00092), Q31(0.00092), Q31(0.00092), Q31(0.00092), Q31(0.00023),
+                                     Q31(0.004), Q31(0.00092), Q31(0.004), Q31(0.00023), Q31(0.00092), Q31(0.00092)};
     const u32 m = v.model;
     const i32* r = ratio[m == M::BELL || m == M::BOLT];
     const i32 sigma = rate_of(lerp16(L(0.8), L(1.8), pedal));
-    for (u32 k = 0; k < 4; ++k) {
+    for (u32 k = 0; k < 3; ++k) {
         i32 lf = lf0 + r[k];
         while (lf > L(5000.0)) lf -= octave;
         add_pedal(v, lf, sigma);
@@ -187,7 +189,6 @@ static __attribute__((noinline)) void setup_rattle(Voice& v, const i32* c, const
 static __attribute__((noinline)) void setup_lid(Voice& v, const i32* c, const Common& k) {
     const i32 lb = shape::along(shape::pitch[M::LID], c[0]) + k.lt;
     const i32 snap = c[4], hollow = c[5];
-    v.high = 0;
     // the board's modes, driven by the slaps
     static const i32 ratio[3] = {L(0.34), L(0.71), L(1.27)};
     static const i32 tau[3] = {L(0.026), L(0.016), L(0.008)};
@@ -527,6 +528,7 @@ static __attribute__((noinline)) void setup_bow(Voice& v, const i32* c, const Co
     const i32 lf0 = shape::along(shape::pitch[M::BOW], c[0]) + k.lt;
     const i32 press = c[2];
     const i32 x = Q16(0.04) + mul16(c[5], Q16(0.28));
+    v.k[1] = (c[4] - 32768) * 2;   // BEND, -1..1 octave, Q16 (half_rate reads it)
     for (u32 n = 1; n <= 12; ++n) {
         const i32 lf = lf0 + tables::lnum[n];
         const i32 a = mul(sinpi(n * static_cast<u32>(x)), Q31(0.000006));
@@ -542,7 +544,6 @@ static __attribute__((noinline)) void setup_bow(Voice& v, const i32* c, const Co
     v.bent = v.n;
     v.k[0] = lf0;
     v.k[3] = k.detune;
-    v.k[1] = (c[4] - 32768) * 2;   // BEND, -1..1 octave, Q16
     v.bdraw = samples(shape::along(shape::draw, c[3]));
     v.binc = increment(lf0);
     v.bphase = 0;
@@ -559,6 +560,9 @@ static __attribute__((noinline)) void setup_bow(Voice& v, const i32* c, const Co
 // ------------------------------------------------------------ dispatch
 inline void setup_model(Voice& v, u32 m, const i32* c, i32 tune) {
     const Common k = common(v, c, tune);
+    // low modes may run at half the rate; BRUSH and CHAIN set their high
+    // modes themselves
+    v.high = 2;
     // the soundboard's soft top, lower with SOFT: the una corda's rounder note
     v.topk = onepole_k((m == M::CHAIN ? L(10000.0) : L(5200.0)) - mul16(k.soft, Q16(1.8)));
     switch (m) {
@@ -577,21 +581,36 @@ inline void setup_model(Voice& v, u32 m, const i32* c, i32 tune) {
 
 // ------------------------------------------------------------ the stages
 // Each per-sample stage is its own function, so tools/cpu.py can count its
-// loop in the compiled code and add up a block from what runs.
+// loop in the compiled code and add up a block from what runs. Each keeps
+// the voice's state it uses in locals over its loop (the output's stores
+// could otherwise reach the voice), and divides by powers of two as C
+// does, rounding toward zero, without a branch (div2k).
+inline i32 div2k(i32 v, unsigned k) { return (v + static_cast<i32>(static_cast<u32>(v >> 31) >> (32 - k))) >> k; }
+// |v|, the most negative value held at one, without a branch.
+inline i32 magnitude(i32 v) {
+    const u32 s = static_cast<u32>(v >> 31);
+    const u32 u = (static_cast<u32>(v) ^ s) - s;
+    return static_cast<i32>(u - (u >> 31));
+}
 // The buzz: noise wherever the string's swing s passes the threshold, in its
 // band; and RATTLE's crack, the paper slapped by the blow (w, falling fast).
 static __attribute__((noinline)) void stage_buzz(Voice& v, const i32* s, i32* out) {
     const i32 thr = v.bthr, level = v.blevel, f = v.bf, q = v.bq, hk = v.k[1], wk = v.wk;
     i32 w = v.wlevel;
+    u32 seed = v.seed;
+    Svf sv = v.bsv;
+    OnePole hp = v.bhp;
     for (unsigned i = 0; i < frames; ++i) {
-        i32 e = absolute(s[i]) - thr;
-        e = e > 0 ? e : 0;
-        const i32 z = mul(noise(v.seed), e + w);
+        const i32 e = imax(magnitude(s[i]) - thr, 0);
+        const i32 z = mul(noise(seed), e + w);
         w = mul(w, wk);
-        const i32 y = v.bhp.high(v.bsv.band(z, f, q), hk);
+        const i32 y = hp.high(sv.band(z, f, q), hk);
         out[i] = add(out[i], mul(y, level) * 16);
     }
     v.wlevel = w;
+    v.seed = seed;
+    v.bsv = sv;
+    v.bhp = hp;
 }
 // RATTLE: the string's note under the paper (RING).
 static __attribute__((noinline)) void stage_ring(Voice& v, const i32* s, i32* out) {
@@ -603,102 +622,141 @@ static __attribute__((noinline)) void stage_slaps(Voice& v, const u32* hit_at, c
     // each burst swells over a fraction of a millisecond (w less a faster w2),
     // as the board's face meets the slip, then dies
     i32 w = v.wlevel, w2 = v.k[4], tail = v.nlevel;
-    const i32 fast = v.k[3];
+    const i32 fast = v.k[3], wf = v.wf, wq = v.wq, whpk = v.whpk, topk = v.k[2], wk = v.wk, tk = v.k[0];
+    u32 seed = v.seed;
+    Svf sv = v.wsv;
+    OnePole hp = v.whp, top = v.top;
     u32 h = 0;
     for (unsigned i = 0; i < frames; ++i) {
         if (h < hits && hit_at[h] == i) {
             w = w2 = hit_amp[h++];
             if (!v.left && h == hits) tail = mul(w, v.k[1]);
         }
-        const i32 z = mul(noise(v.seed), add(w - w2, tail)) / 4;
-        const i32 y = v.whp.high(v.wsv.band(z, v.wf, v.wq), v.whpk);
-        out[i] = v.top.low(add(out[i], y), v.k[2]);
-        w = mul(w, v.wk);
+        const i32 z = div2k(mul(noise(seed), add(w - w2, tail)), 2);
+        const i32 y = hp.high(sv.band(z, wf, wq), whpk);
+        out[i] = top.low(add(out[i], y), topk);
+        w = mul(w, wk);
         w2 = mul(w2, fast);
-        tail = mul(tail, v.k[0]);
+        tail = mul(tail, tk);
     }
     v.wlevel = w;
     v.k[4] = w2;
     v.nlevel = tail;
+    v.seed = seed;
+    v.wsv = sv;
+    v.whp = hp;
+    v.top = top;
 }
 // BRUSH, PLANK: the brush's (or plank's) noise, rising over its stroke,
 // then dying; a share of it drives the strings (x).
 static __attribute__((noinline)) void stage_sweep(Voice& v, i32* x, i32* hiss) {
-    i32 level = v.nlevel;
-    const i32 sparse = v.model == M::BRUSH ? v.k[0] : 0, drive = v.k[2];
-    const i32 rise_step = v.nrise > 0 ? (v.ntarget - level) / v.nrise : 0;
+    i32 level = v.nlevel, rise = v.nrise;
+    const i32 sparse = v.model == M::BRUSH ? v.k[0] : 0, drive = v.k[2], nk = v.nk, hpk = v.nhpk;
+    const i32 rise_step = rise > 0 ? (v.ntarget - level) / rise : 0;
+    u32 seed = v.seed;
+    OnePole hp = v.nhp;
     for (unsigned i = 0; i < frames; ++i) {
-        if (v.nrise > 0) { level += rise_step; --v.nrise; } else level = mul(level, v.nk);
-        i32 n = noise(v.seed);
-        if (sparse && absolute(n) < sparse) n = 0;
-        const i32 z = v.nhp.high(mul(n, level) / 8, v.nhpk);
+        if (rise > 0) { level += rise_step; --rise; } else level = mul(level, nk);
+        i32 n = noise(seed);
+        n = magnitude(n) < sparse ? 0 : n;   // (sparse 0: every grain)
+        const i32 z = hp.high(div2k(mul(n, level), 3), hpk);
         x[i] = mul(z, drive);
         hiss[i] = z;
     }
     v.nlevel = level;
+    v.nrise = rise;
+    v.seed = seed;
+    v.nhp = hp;
 }
 // ... and its hiss into the sound, high-passed twice.
 static __attribute__((noinline)) void stage_hiss(Voice& v, const i32* hiss, i32* out) {
-    const i32 share = v.k[1];
+    const i32 share = v.k[1], hpk = v.hpk;
+    OnePole hp1 = v.hp1, hp2 = v.hp2;
     for (unsigned i = 0; i < frames; ++i) {
-        const i32 y = add(out[i], mul(hiss[i], share) / 4);
-        out[i] = v.hp2.high(v.hp1.high(y, v.hpk), v.hpk);
+        const i32 y = add(out[i], div2k(mul(hiss[i], share), 2));
+        out[i] = hp2.high(hp1.high(y, hpk), hpk);
     }
+    v.hp1 = hp1;
+    v.hp2 = hp2;
 }
 // CHAIN: a bead lands at random, chance in 2^32 a sample; its knock rings the
 // glass (x) and hisses.
 static __attribute__((noinline)) void stage_beads(Voice& v, u32 chance, i32* x, i32* out) {
     i32 w = v.wlevel, target = v.wk;
+    const i32 hpk = v.nhpk, k2 = v.k[2], k3 = v.k[3];
+    u32 seed = v.seed;
+    OnePole hp = v.nhp;
     for (unsigned i = 0; i < frames; ++i) {
-        const u32 r = lcg(v.seed);
+        const u32 r = lcg(seed);
         x[i] = 0;
         if (r < chance) {
             const i32 a = static_cast<i32>((r >> 8) & 0xffff) * 4096 + Q31(0.2);
             x[i] = mul(a, Q31(0.25));
             target = a;
         }
-        w += (target - w) / 4;   // a knock's hiss rises over a few samples: glass, not a spark
-        const i32 z = v.nhp.high(mul(noise(v.seed), w), v.nhpk);
-        out[i] = mul(z, v.k[3]);
-        target = mul(target, v.k[2]);
+        w += div2k(target - w, 2);   // a knock's hiss rises over a few samples: glass, not a spark
+        const i32 z = hp.high(mul(noise(seed), w), hpk);
+        out[i] = mul(z, k3);
+        target = mul(target, k2);
     }
     v.wlevel = w;
     v.wk = target;
+    v.seed = seed;
+    v.nhp = hp;
 }
 // BOW: the thread's stick and slip (a smoothed sawtooth at the string's pitch)
 // and its rosin's grit, swelling from e0 by step a sample.
 static __attribute__((noinline)) void stage_bow(Voice& v, i32 e, i32 step, i32* x) {
-    u32 ph = v.bphase;
+    u32 ph = v.bphase, seed = v.seed;
+    const u32 inc = v.binc;
     const i32 grit = v.k[2], k = v.blp;
+    OnePole lp1 = v.nlp, lp2 = v.nhp;
     for (unsigned i = 0; i < frames; ++i) {
         e += step;
-        ph += v.binc;
-        const i32 saw = static_cast<i32>(ph) / 2;
-        const i32 drive = v.nhp.low(v.nlp.low(saw, k), k) + mul(noise(v.seed) / 2, grit);
+        ph += inc;
+        const i32 saw = div2k(static_cast<i32>(ph), 1);
+        const i32 drive = lp2.low(lp1.low(saw, k), k) + mul(div2k(noise(seed), 1), grit);
         x[i] = mul(drive, e);
     }
     v.bphase = ph;
+    v.seed = seed;
+    v.nlp = lp1;
+    v.nhp = lp2;
 }
 // AGE: the grooved felt's scratch at the blow.
 static __attribute__((noinline)) void stage_grain(Voice& v, i32* out) {
     i32 w = v.grain;
     const i32 k = Q31(0.9943);   // a 4 ms fall
+    u32 seed = v.seed;
     for (unsigned i = 0; i < frames; ++i) {
-        out[i] = add(out[i], mul(noise(v.seed), w) / 32);
+        out[i] = add(out[i], div2k(mul(noise(seed), w), 5));
         w = mul(w, k);
     }
+    v.seed = seed;
     v.grain = v.t >= 5 * frames ? 0 : w;
 }
 // The soundboard's soft top; CHAIN's high-pass and a gentler top, twice.
 static __attribute__((noinline)) void stage_top(Voice& v, i32* out) {
-    for (unsigned i = 0; i < frames; ++i) out[i] = v.top.low(out[i], v.topk);
+    const i32 k = v.topk;
+    OnePole top = v.top;
+    for (unsigned i = 0; i < frames; ++i) out[i] = top.low(out[i], k);
+    v.top = top;
 }
 // RATTLE: the same top twice, so the paper's buzz is warm, not fizzing.
 static __attribute__((noinline)) void stage_top2(Voice& v, i32* out) {
-    for (unsigned i = 0; i < frames; ++i) out[i] = v.hp2.low(v.top.low(out[i], v.topk), v.topk);
+    const i32 k = v.topk;
+    OnePole top = v.top, hp2 = v.hp2;
+    for (unsigned i = 0; i < frames; ++i) out[i] = hp2.low(top.low(out[i], k), k);
+    v.top = top;
+    v.hp2 = hp2;
 }
 static __attribute__((noinline)) void stage_highpass(Voice& v, i32* out) {
-    for (unsigned i = 0; i < frames; ++i) out[i] = v.hp2.low(v.top.low(v.hp1.high(out[i], v.hpk), v.topk), v.topk);
+    const i32 k = v.topk, hk = v.hpk;
+    OnePole top = v.top, hp1 = v.hp1, hp2 = v.hp2;
+    for (unsigned i = 0; i < frames; ++i) out[i] = hp2.low(top.low(hp1.high(out[i], hk), k), k);
+    v.top = top;
+    v.hp1 = hp1;
+    v.hp2 = hp2;
 }
 
 // ------------------------------------------------------------ a block
@@ -792,22 +850,33 @@ inline void block_model(Voice& v, i32* out) {
             const i32 p = clamp(pos, 0, 4096);
             env_end = p >= 4096 ? one : p * p * 128;   // Q31
             // the bend along the draw
+            // (partial n at n times its unison's increment, worked out once a
+            // block; past 7 kHz held there; twice it for a mode at half the rate)
             if (v.k[1]) {
                 const i32 lf0 = v.k[0] + lerp16(0, v.k[1], p * 16);
-                v.binc = increment(lf0);
+                const u32 inc0 = increment(lf0), top = increment(L(7000.0));
+                const u32 below = increment(lf0 - v.k[3]), above = increment(lf0 + v.k[3]);
+                v.binc = inc0;
                 for (u32 j = 0; j < v.bent; ++j) {
                     const u32 n = j < 4 ? 1 + j / 2 : j - 1;
-                    const i32 dt = j < 4 ? (j & 1 ? v.k[3] : -v.k[3]) : 0;
-                    v.mode[j].f = sin_inc(increment(clamp(lf0 + tables::lnum[n] + dt, 0, L(7000.0)))) * 2;
+                    const u32 base = j < 4 ? (j & 1 ? above : below) : inc0;
+                    u32 inc = base >= (1u << 28) && n >= 3 ? top : base * n;
+                    inc = inc < top ? inc : top;
+                    v.mode[j].f = sin_inc((v.halves & (1u << j)) ? inc * 2 : inc) * 2;
                 }
             }
         } else {
             env_end = 0;
             v.waiting = 0;
         }
-        stage_bow(v, v.benv, (env_end - v.benv) / static_cast<i32>(frames), x);
+        if (v.benv || env_end) {
+            stage_bow(v, v.benv, (env_end - v.benv) / static_cast<i32>(frames), x);
+            run_modes(v, x, out);
+        } else {
+            // the thread let go: the string rings free, and its modes stop as they die
+            run_modes(v, nullptr, out);
+        }
         v.benv = env_end;
-        run_modes(v, x, out);
         break;
     }
     default: {   // THUD, TOM, TACK
@@ -825,7 +894,7 @@ inline void block_model(Voice& v, i32* out) {
     // the pedal's strings answer what the voice sounds (set up in the fifth
     // block, to spread the note's start)
     if (v.t == 4 * frames && v.k[7] > 0) pedal_strings(v, v.k[6], v.k[7]);
-    run_pedal(v, out, out);
+    run_pedal(v, out);
     if (m == M::RATTLE) stage_top2(v, out);
     else if (m != M::BRUSH && m != M::CHAIN && m != M::LID) stage_top(v, out);
     // the damper lands

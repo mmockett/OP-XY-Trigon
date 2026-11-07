@@ -56,12 +56,13 @@ inline bool pad_control_text(u32 field, i32 value, char* text) {
     return true;
 }
 
-// A note's sound has ended once its output has stayed under -84 dB for
-// 90 ms with nothing still to come (a bounce, a shake, a bow still drawn).
+// A note's sound has ended once its output has stayed 72 dB under the
+// ceiling for 23 ms with nothing still to come (a bounce, a shake, a bow
+// still drawn).
 // Its voice then writes silence without running the string, and finished
 // tells the SDK it may free the voice.
-const i32 quiet_under = 1 << 17;
-const u32 quiet_blocks = 62;
+const i32 quiet_under = 1 << 18;
+const u32 quiet_blocks = 16;
 inline bool finished(const Voice& voice, const Shared&) { return voice.done != 0; }
 
 // A control word (raw << 24) as a Q16 unit.
@@ -97,21 +98,33 @@ const i32 limit_log = L(0.8 * 1073741824.0);
 const i32 limit_top_beads = static_cast<i32>(0.65 * 1073741824.0);
 const i32 limit_log_beads = L(0.65 * 1073741824.0);
 const i32 limit_back = Q31(0.2516);   // 1 - exp(-64 / (0.005 * 44100)) a block
-inline void limit(Voice& voice, i32* y) {
+// most: the block's samples' magnitudes ORed together, at least the largest.
+// A sample's half is at most half of it, and a midpoint's estimate at most
+// (9 + 9 + 1 + 1) / 32 of it, so under 0.8 of the top neither can pass half
+// the top, and the block needs no search.
+inline void limit(Voice& voice, i32* y, i32 most) {
     const bool beads = voice.model == M::CHAIN;
     const i32 top = beads ? limit_top_beads : limit_top;
     const i32 half_top = top / 2;
     i32 peak = 0;     // halves
     u32 first = frames;
-    for (unsigned i = 0; i < frames; ++i) {
-        const i32 a = absolute(y[i] / 2);
-        if (a > peak) peak = a;
-        if (a > half_top && first == frames) first = i;
-    }
-    for (unsigned i = 1; i + 2 < frames; ++i) {
-        const i32 m = absolute((y[i] / 32 + y[i + 1] / 32) * 9 - (y[i - 1] / 32 + y[i + 2] / 32)) ;   // halves
-        if (m > peak) peak = m;
-        if (m > half_top && first > i) first = i;
+    if (most > (top / 5) * 4) {
+        for (unsigned i = 0; i < frames; ++i) {
+            const i32 a = absolute(y[i] / 2);
+            if (a > peak) peak = a;
+            if (a > half_top && first == frames) first = i;
+        }
+        // each sample over 32 once, carried along the block
+        i32 a = y[0] / 32, b = y[1] / 32, c = y[2] / 32;
+        for (unsigned i = 1; i + 2 < frames; ++i) {
+            const i32 d = y[i + 2] / 32;
+            const i32 m = absolute((b + c) * 9 - (a + d));   // halves
+            if (m > peak) peak = m;
+            if (m > half_top && first > i) first = i;
+            a = b;
+            b = c;
+            c = d;
+        }
     }
     i32 g = voice.lim;
     i32 target = g >= one ? one : g + mul(one - g, limit_back);
@@ -155,6 +168,7 @@ inline void begin(Voice& voice, Shared& shared, opxy::Parameters parameters) {
     voice.tune = tune;
     voice.soft = soft;
     voice.seed = (++shared.notes) * 2654435761u + owner * 40503u;
+    if (!voice.seed) voice.seed = 0x9e3779b9u;
     i32 c[8];
     for (u32 i = 0; i < 8; ++i) c[i] = unit7(parameters[i]);
     setup_model(voice, model, c, tune);
@@ -189,9 +203,9 @@ inline void render(Voice& voice, Shared& shared, u32, opxy::Output output, opxy:
     for (unsigned i = 0; i < frames; ++i) {
         const i32 y = clamp(mul(x[i], gain), -(one >> 6), one >> 6) * 64;
         output[i] = y;
-        most |= absolute(y);
+        most |= magnitude(y);
     }
-    if (levels::limit[voice.model]) limit(voice, output);   // level: limiter
+    if (levels::limit[voice.model]) limit(voice, output, most);   // level: limiter
     // (tools/calibrate.py builds a copy without the lines marked "level:", to
     // measure the peaks the cap, the limiter and the knee take)
     if (most > half_scale - (half_scale >> 2)) for (unsigned i = 0; i < frames; ++i) output[i] = knee(output[i]);   // level: knee

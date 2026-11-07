@@ -5,23 +5,25 @@ here and commit both.
 
     python3 flicker/tools/make_panel.py
 
-The screen is a strip of 16 mm sound film running right to left through a
-projector's sound head, seen face on. The film is drawn to its own
-proportions at 9.45 px a millimetre (a frame pitch of 7.62 mm is 72 px; a
-perforation 1.27 x 1.83 mm is 12 x 17 px; a picture 7.49 x 10.26 mm is
-drawn 64 x 80 px, a little shortened), its soundtrack widened from 2.5 mm
-to 48 px so the drawing reads. The sound head's castings cover the film either side of
-its gate, so three frame pitches show: the exciter lamp's house and lens
-barrel stand over the track at the gate, the photocell under it; a sprocket
-roller at each side of the gate; the film comes in over a guide roller in a
-slack loop.
+The screen is a strip of 16 mm sound film lying on a near-black slat, drawn
+isometric (30 degree edges, no vanishing point): four frames of it on the
+slat, a frame every 50 px along the film, the film 56 px across. Along the
+film's back edge one perforation a frame and the empty picture frames, dim;
+along its front edge the soundtrack, where display.cpp lays the selected
+key's drawing in each frame. Under the clear film the slat carries the
+animator's pencil guides for each frame and a fixed dim scale along its
+front edge. A small gate bridges the film at its middle: two posts and a bar
+that FLUTTER lifts, with the slit's light across the track under it. The film
+runs on over both ends of the slat into the dark: black masks over the dark
+past each end, and the slat's end face, are drawn over what moves, so a frame
+pulled off the slat goes over its edge.
 
 Everything a control or a note moves is a bound node, drawn around its own
 pivot (0, 0); display.cpp places it. Parts that never move are plain
-artwork, drawn back to front (artwork order is stacking order): the film,
-then what moves on it, then the castings and the lamp in front. Lines are
-thin closed ribbons; no path has more than one subpath or 64 points. Pure
-Python.
+artwork, drawn back to front (artwork order is stacking order). Lines are
+thin closed ribbons; no path has more than one subpath or 64 points, none
+turns sharper than SHARPEST degrees, neighbouring points stay 1/8 px apart
+and every outline closes over at least 1/4 px. Pure Python.
 """
 import math
 import pathlib
@@ -30,41 +32,66 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 ID = "flicker"
 PATHS, POINTS = 4, 64
 
-# ---------------------------------------------------------------- geometry
-PITCH = 72            # px a frame
-GATE = 240            # the slit's x
-WIN_L, WIN_R = GATE - 108, GATE + 108   # the gate's window: three pitches
-FILM_TOP, FILM_BOT = 41, 205
-PERF_Y0, PERF_Y1, PERF_W, PERF_R = 48, 65, 12, 2.2
-PIC_Y0, PIC_Y1, PIC_W, PIC_R = 70, 150, 64, 4.0
-TRACK_Y0, TRACK_Y1 = 154, 202
-TRACK_C = (TRACK_Y0 + TRACK_Y1) / 2
-ROLL_Y = (PERF_Y0 + PERF_Y1) / 2      # the sprocket rollers' centres, on the perforation row
-ROLL_R = 18.335                        # their pitch circle: five teeth (225 degrees) a frame
-ROLL_TEETH = 8
-LOOP_L, LOOP_R, LOOP_TOP = 404, 444, 60   # the slack loop's sides, hung from two rollers' centres
-FLY_X, FLY_Y, FLY_R = 60, 124, 40         # the flywheel that steadies the film
-LOOP_ARC = (LOOP_R - LOOP_L) / 2
-SLIT_TOP, SLIT_BOT = TRACK_Y0 - 1, TRACK_Y1 + 1
+# ---------------------------------------------------------------- the isometric
+C30 = 887 / 1024      # cos 30 degrees as display.cpp has it (Q10)
+S30 = 0.5
+OX, OY = 177.5, 71.0  # where the film plane's (0, 0) lies before its height
+SLAT_H = 8.0          # the slat's thickness: the film lies on it at z = SLAT_H
+
+
+def iso(x, y, z=SLAT_H):
+    """A point x along the film, y across it, z up, on the screen."""
+    return (OX + (x - y) * C30, OY + (x + y) * S30 - z)
+
+
+def rel(dx, dy, dz=0.0):
+    """An offset in the same projection, about a node's pivot."""
+    return ((dx - dy) * C30, (dx + dy) * S30 - dz)
+
+
+# ---------------------------------------------------------------- geometry (film px)
+PITCH = 50            # a frame
+FRAMES = 4
+LENGTH = PITCH * FRAMES                     # the slat's length: four frames
+FILM_W = 56                                 # the film across
+MARGIN = 5                                  # the slat past the film's edges
+PERF = (2.0, 6.0, 2.5, 6.0)                 # x0, x1, y0, y1 within a frame
+PIC = (9.0, 47.0, 9.0, 26.0)
+DIVIDER_Y = 28.5                            # between the pictures and the track
+TRACK_C, TRACK_HALF = 42.0, 12.0            # the soundtrack: 30..54 across
+DRAW_X0, DRAW_X1 = 2.0, 48.0                # where a frame's drawing lies along it
+FACE_HALF_X, FACE_HALF_Y = 33.0, 24.0       # the drawing as display.cpp draws it face on
+GATE = LENGTH / 2                           # the gate and the slit: the slat's middle
+SLIT_Y0, SLIT_Y1 = TRACK_C - TRACK_HALF - 0.5, TRACK_C + TRACK_HALF + 0.5
+BAR_HALF_X, BAR_Y0, BAR_Y1, BAR_THICK = 3.0, -5.5, FILM_W + 5.5, 3.0
+BAR_Z = 8.0                                 # the bar's foot above the film at rest, clear of the slit
+LIFT = 8.0                                  # how far FLUTTER lifts it
+POST_HALF = 1.25
+POST_TOP = BAR_Z + LIFT + BAR_THICK + 2.5
+POSTS_Y = (-3.0, FILM_W + 3.0)
+GUIDE_LENGTH = 21.0                         # a pencil guide's segment, screen px
+SPECKS = ((34.5, 51.5), (19.0, 13.5))       # DUST's two specks a frame, decided once
+SCALE_STEP = 5
+MASK_REACH = 34.0                           # how far past each end the masks cover
 
 # greys
-INK = "#F2F2F2"       # the drawing: the brightest thing on screen
-LIGHT = "#FFFFFF"     # the slit's light
-EDGE = "#8C8C8C"      # the film's edges
-DIM = "#5A5A5A"       # the picture frames, the track's edges
-PERF = "#A8A8A8"
-BASE = "#0A0A0A"      # the film base, dark
-BODY = "#181818"      # the castings, the lamp house
-FIT = "#262626"       # fittings
-CAST = "#6A6A6A"      # their outline
-METAL = "#9A9A9A"
+G2, G3, G4 = "#4B4B4B", "#969696", "#CDCDCD"   # the grey code: encoders 2, 3, 4
+SLAT, SEAM = "#191919", "#646464"
+FILM_BASE, FILM_EDGE, DIVIDER = "#0E0E0E", "#646464", "#262626"
+FRAME = "#323232"
+SCALE = "#3C3C3C"
+LIGHT = "#E6E6E6"
+SIDE = "#7D7D7D"     # a light solid's right face: one step down the ramp
+BLACK = "#000000"
 
-# The palette: 0 black (parked); 1..8 a ramp of greys at 1 px; 9 the
-# drawing's white; 10 the slit's light; 11 the hair's grey; the rest spare.
-RAMP = ["#2E2E2E", "#444444", "#5C5C5C", "#767676", "#909090", "#ACACAC", "#C8C8C8", "#E6E6E6"]
-PALETTE = [("#000000", 1.0)] + [(g, 1.0) for g in RAMP] + [
-    (INK, 1.0), (LIGHT, 1.0), ("#7A7A7A", 1.0), ("#000000", 1.0), ("#000000", 1.0), ("#000000", 1.0), ("#000000", 1.0)]
-
+# The palette: 0 black (parked); 1..6 the drawing's ink at INK's weights;
+# 7..9 the pencil guides at INK's weights; 10 the frames and perforations,
+# 11 them fading over an end of the slat; 12..14 the drawing fading there.
+DRAW_W = [0.45, 0.55, 0.65, 0.75, 0.95, 1.2]
+GUIDE_W = [0.4, 0.55, 0.8]
+PALETTE = ([(BLACK, 1.0)] + [(G4, w) for w in DRAW_W] + [(G2, w) for w in GUIDE_W]
+           + [(FRAME, 0.5), ("#1E1E1E", 0.5), ("#969696", 0.7), ("#646464", 0.7), ("#3A3A3A", 0.7), (BLACK, 1.0)])
+assert len(PALETTE) == 16
 
 SHARPEST = 150.0   # degrees: the sharpest turn an outline may make
 
@@ -94,6 +121,12 @@ def poly(points):
         ux, uy, vx, vy = bx - ax, by - ay, cx - bx, cy - by
         turn = math.degrees(math.atan2(abs(ux * vy - uy * vx), ux * vx + uy * vy))
         assert turn <= SHARPEST, f"turn of {turn:.1f} degrees at point {i}"
+    # Neighbouring points closer than 1/8 px merge on the device, and a
+    # closing edge under 1/4 px draws as a long sliver.
+    for i in range(n - 1):
+        (ax, ay), (bx, by) = out[i], out[i + 1]
+        assert abs(bx - ax) >= 0.125 or abs(by - ay) >= 0.125, f"points {i} and {i + 1} merge"
+    assert math.hypot(out[0][0] - out[-1][0], out[0][1] - out[-1][1]) >= 0.25, "closes over under 1/4 px"
     return "M" + " L".join(f"{fmt(x)},{fmt(y)}" for x, y in out) + " Z"
 
 
@@ -111,214 +144,130 @@ def ribbon(points, w=0.5):
     return loop[k:] + loop[:k]
 
 
-def line(x0, y0, x1, y1, w=0.5, steps=1):
-    return ribbon([(x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps) for i in range(steps + 1)], w)
+def segment(a, b, w=0.3):
+    return ribbon([a, b], w)
 
 
-def rect(x0, y0, x1, y1, r=0.0, steps=3):
-    if r <= 0:
-        return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
-    pts = []
-    for cx, cy, a0 in ((x1 - r, y0 + r, -90), (x1 - r, y1 - r, 0), (x0 + r, y1 - r, 90), (x0 + r, y0 + r, 180)):
-        for i in range(steps + 1):
-            a = math.radians(a0 + 90 * i / steps)
-            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
-    return pts
-
-
-def ellipse(cx, cy, rx, ry, n=20, rot=0.0):
-    c, s = math.cos(math.radians(rot)), math.sin(math.radians(rot))
-    return [(cx + rx * math.cos(2 * math.pi * i / n) * c - ry * math.sin(2 * math.pi * i / n) * s,
-             cy + rx * math.cos(2 * math.pi * i / n) * s + ry * math.sin(2 * math.pi * i / n) * c) for i in range(n)]
-
-
-def arc(cx, cy, r, a0, a1, n=12, w=0.5):
-    return ribbon([(cx + r * math.cos(math.radians(a0 + (a1 - a0) * i / n)), cy + r * math.sin(math.radians(a0 + (a1 - a0) * i / n)))
-                   for i in range(n + 1)], w)
+def quad(x0, x1, y0, y1, z=SLAT_H):
+    """A rectangle lying on the film plane (or at height z), as a closed outline."""
+    return [iso(x0, y0, z), iso(x1, y0, z), iso(x1, y1, z), iso(x0, y1, z)]
 
 
 # ---------------------------------------------------------------- the scene, back to front
-LAYERS = []   # ("static", d, stroke, width, fill) or ("node", name)
-NODES = {}    # name -> (points or None, circle or None, fill, stroke)
+LAYERS = []   # ("static", d, stroke, width, fill), ("path", k) or ("node", name)
+NODES = {}    # name -> (points or None, circle or None, fill, stroke, width)
 
 
-def static(points, col, w=1.0, fill="none"):
+def static(points, col, w=0.5, fill="none"):
     LAYERS.append(("static", poly(points), col, w, fill))
 
 
-def static_circle(cx, cy, r, col, w=1.0, fill="none"):
-    LAYERS.append(("circle", (cx, cy, r), col, w, fill))
-
-
-def node(name, points=None, circle=None, fill="none", stroke=METAL):
-    NODES[name] = (points, circle, fill, stroke)
+def node(name, points=None, circle=None, fill="none", stroke=G4, w=1.0):
+    NODES[name] = (points, circle, fill, stroke, w)
     LAYERS.append(("node", name))
 
 
+def box(x0, x1, y0, y1, z0, z1, top, left, right, edge, ew):
+    """A box's three faces seen: the left (y = y1) and right (x = x1) faces, then the top."""
+    static([iso(x0, y1, z1), iso(x1, y1, z1), iso(x1, y1, z0), iso(x0, y1, z0)], edge, ew, left)
+    static([iso(x1, y0, z1), iso(x1, y1, z1), iso(x1, y1, z0), iso(x1, y0, z0)], edge, ew, right)
+    static([iso(x0, y0, z1), iso(x1, y0, z1), iso(x1, y1, z1), iso(x0, y1, z1)], edge, ew, top)
+
+
+def slat():
+    # a near-black slat: its top and left faces 191919 with 646464 seams;
+    # its right face, the end, is drawn over what moves (ends)
+    y0, y1 = -MARGIN, FILM_W + MARGIN
+    static([iso(0, y1), iso(LENGTH, y1), iso(LENGTH, y1, 0), iso(0, y1, 0)], SEAM, 0.5, SLAT)
+    static(quad(0, LENGTH, y0, y1), SEAM, 0.5, SLAT)
+    # a fixed dim scale along its front edge: a tick every 5 px, longer at
+    # each frame line, where the film's frames come to rest
+    for k in range(1, LENGTH // SCALE_STEP):
+        x = k * SCALE_STEP
+        if abs(x - GATE) < 2:
+            continue   # under the gate's front post
+        long_ = x % PITCH == 0
+        static(segment(iso(x, FILM_W + 1.2), iso(x, FILM_W + (4.2 if long_ else 3.2)), 0.3), SCALE, 0.35)
+
+
 def film():
-    # the film base in the gate's window, dark, and its two edges
-    static([(WIN_L - 20, FILM_TOP), (WIN_R + 20, FILM_TOP), (WIN_R + 20, FILM_BOT), (WIN_L - 20, FILM_BOT)], BASE, 1.0, BASE)
-    static(line(WIN_L - 20, FILM_TOP, WIN_R + 20, FILM_TOP, 0.6), EDGE, 0.8)
-    static(line(WIN_L - 20, FILM_BOT, WIN_R + 20, FILM_BOT, 0.6), EDGE, 0.8)
-    # the soundtrack's two edges: the drawing lives between them
-    static(line(WIN_L - 20, TRACK_Y0, WIN_R + 20, TRACK_Y0, 0.4), DIM, 0.8)
-    static(line(WIN_L - 20, TRACK_Y1, WIN_R + 20, TRACK_Y1, 0.4), DIM, 0.8)
+    # the clear film the length of the slat, its two edges, and the dim line
+    # between its pictures and its soundtrack
+    static(quad(0, LENGTH, 0, FILM_W), FILM_BASE, 0.0, FILM_BASE)
+    for y in (0.0, FILM_W):
+        static(segment(iso(0, y), iso(LENGTH, y), 0.25), FILM_EDGE, 0.4)
+    static(segment(iso(0, DIVIDER_Y), iso(LENGTH, DIVIDER_Y), 0.2), DIVIDER, 0.35)
+
+
+def guides():
+    # the pencil guides of each frame's taper, ruled on the slat where the
+    # frames come to rest: top and bottom, each one or two straight segments
+    # of GUIDE_LENGTH (display.cpp turns, scales and places them)
+    for k in range(FRAMES):
+        for side in ("t", "b"):
+            for seg in ("a", "b"):
+                node(f"guide_{k}{side}{seg}", ribbon([(0, 0), (GUIDE_LENGTH, 0)], 0.25), stroke=G2, w=0.55)
 
 
 def moving():
-    # the drawings: the reshaping paths 0..3 (placed in build)
+    # the drawings: the reshaping paths 0..3 (placed by display.cpp)
     for k in range(PATHS):
         LAYERS.append(("path", k))
-    # each frame's picture: an empty frame, its corners rounded as a camera
-    # gate's are; centred on its node
-    for k in range(4):
-        node(f"frame_{k}", rect(-PIC_W / 2, -(PIC_Y1 - PIC_Y0) / 2, PIC_W / 2, (PIC_Y1 - PIC_Y0) / 2, PIC_R, 2), stroke=DIM)
-    # one perforation a frame, on the frame line (single-perforation sound film)
-    for k in range(3):
-        node(f"perf_{k}", rect(-PERF_W / 2, -(PERF_Y1 - PERF_Y0) / 2, PERF_W / 2, (PERF_Y1 - PERF_Y0) / 2, PERF_R, 2), stroke=PERF)
-    # DUST: a hair caught on each frame, curling over the picture's foot
-    for k in range(4):
-        node(f"hair_{k}", ribbon([(-17, 3), (-12, 0.5), (-6, -0.6), (0, 0.6), (5, 2.6), (10, 3.4), (14, 2.2), (17, -0.6), (19, -3.6)], 0.6),
-             stroke=EDGE)
+    # each frame's picture, empty, and its perforation, centred on their nodes
+    hx, hy = (PIC[1] - PIC[0]) / 2, (PIC[3] - PIC[2]) / 2
+    for k in range(FRAMES):
+        node(f"pic_{k}", [rel(-hx, -hy), rel(hx, -hy), rel(hx, hy), rel(-hx, hy)], stroke=FRAME, w=0.5)
+    px, py = (PERF[1] - PERF[0]) / 2, (PERF[3] - PERF[2]) / 2
+    for k in range(FRAMES):
+        node(f"perf_{k}", [rel(-px, -py), rel(px, -py), rel(px, py), rel(-px, py)], stroke=FRAME, w=0.5)
+    # DUST: specks on each frame, filled
+    for k in range(FRAMES):
+        for j in range(len(SPECKS)):
+            node(f"speck_{k}{j}", circle=(0, 0, 0.8), fill=G4, stroke=G4, w=0.3)
 
 
-def castings():
-    # the sound head's castings either side of the gate, over the film:
-    # dark iron bodies with a chamfered inner edge, a channel lip, screws
-    for side in (-1, 1):
-        x_in = WIN_L if side < 0 else WIN_R
-        x_out = -2 if side < 0 else 482
-        y0, y1 = 38.6, 212
-        pts = [(x_out, y0), (x_in + side * 6, y0), (x_in, y0 + 6), (x_in, y1 - 6), (x_in + side * 6, y1), (x_out, y1)]
-        static(pts, CAST, 1.0, BODY)
-        # the film channel's lip: where the film runs in under the casting
-        static(line(x_in + side * 4, FILM_TOP + 30, x_in + side * 4, FILM_BOT - 4, 0.5), "#3A3A3A", 0.8)
-        # screws by the gate
-        for y in (112, 186):
-            cx = x_in + side * 16
-            static_circle(cx, y, 3.2, "#5E5E5E", 0.8, FIT)
-            static(line(cx - 2, y + 0.6, cx + 2, y - 0.6, 0.5), "#5E5E5E", 0.6)
-
-
-def flywheel():
-    # the sound head's flywheel on the left casting, which steadies the
-    # film's speed past the slit: a rim, its spokes (they turn with the
-    # film, one spoke a frame) and the hub
-    static_circle(FLY_X, FLY_Y, FLY_R, "#7A7A7A", 1.0, FIT)
-    static_circle(FLY_X, FLY_Y, FLY_R - 6, "#5A5A5A", 0.8, "#101010")
-    spokes = []
-    for k in range(5):
-        a = 2 * math.pi * k / 5
-        for da, r in ((-0.34, 9.0), (-0.09, 13.0), (-0.055, FLY_R - 7.5), (0.055, FLY_R - 7.5), (0.09, 13.0)):
-            spokes.append((r * math.cos(a + da), r * math.sin(a + da)))
-    node("spokes", spokes, stroke="#9A9A9A")
-    static_circle(FLY_X, FLY_Y, 7.5, "#8A8A8A", 0.9, BODY)
-    static_circle(FLY_X, FLY_Y, 2.4, "#8A8A8A", 0.8, FIT)
-
-
-def lamp():
-    # the exciter lamp's house over the gate: a domed can with its vents and
-    # a clamp band, the optical tube stepping down to the slit plate, a
-    # focusing collar; the photocell's cup under the film
-    cx = GATE
-    static(rect(cx - 22, 40.5, cx + 22, 46, 1.5, 1), "#7E7E7E", 0.9, FIT)    # the lid
-    static(rect(cx - 19, 46, cx + 19, 90, 2.5, 2), "#7E7E7E", 1.0, BODY)     # the house
-    for x in (-9, -3, 3, 9):                                                # its louvres
-        static(rect(cx + x - 1, 52, cx + x + 1, 76, 1, 1), "#4A4A4A", 0.6, "#050505")
-    static_circle(cx + 22.5, 66, 3.2, "#7E7E7E", 0.9, FIT)                 # the lamp's thumbscrew
-    static(rect(cx - 22, 90, cx + 22, 95, 1.5, 1), "#7E7E7E", 0.9, FIT)    # the flange
-    static_circle(cx - 17, 92.5, 1.3, "#9A9A9A", 0.6, BODY)
-    static_circle(cx + 17, 92.5, 1.3, "#9A9A9A", 0.6, BODY)
-    static(rect(cx - 10, 95, cx + 10, 134, 2, 2), "#7E7E7E", 1.0, BODY)
-    static(rect(cx - 12.5, 112, cx + 12.5, 118, 1, 1), "#6A6A6A", 0.8, FIT)   # the focusing collar
-    for x in (-8, -4, 0, 4, 8):
-        static(line(cx + x, 112.8, cx + x, 117.2, 0.4), "#4A4A4A", 0.5)
-    static(rect(cx - 6, 134, cx + 6, 149, 1.5, 1), "#7E7E7E", 1.0, BODY)
-    static(rect(cx - 13, 149, cx + 13, 152.5, 1, 1), "#9A9A9A", 0.8, FIT)   # the slit plate
-    # the photocell under the film: its cup and window
-    static(rect(cx - 15, 208, cx + 15, 230, 4, 2), "#7E7E7E", 1.0, BODY)
-    static(rect(cx - 8, 211, cx + 8, 216, 1.5, 1), "#9A9A9A", 0.8, "#050505")
-
-
-def rollers():
-    # the sprocket rollers at the gate's edges: a dark drum (still), its
-    # toothed flange (it turns with the film), the hub
-    for side, x in (("l", WIN_L), ("r", WIN_R)):
-        static_circle(x, ROLL_Y, ROLL_R - 2.6, "#7A7A7A", 0.9, FIT)
-        # one outline round all eight teeth, always turning forward: each
-        # tooth's flanks and tip, then the root between it and the next,
-        # strictly inside the gap (a root that ran past the next tooth's
-        # flank doubled back on itself, which the OP-XY draws as streaks).
-        # It starts on a tip, where both edges are longest.
-        teeth = []
-        n = ROLL_TEETH
-        step = 2 * math.pi / n
-        r0, r1 = ROLL_R - 2.6, ROLL_R + 0.2
-        base, tip = 0.21, 0.12
-        for t in range(n):
-            a = step * t
-            for da, r in ((-base, r0), (-tip, r1), (tip, r1), (base, r0)):
-                teeth.append((r * math.cos(a + da), r * math.sin(a + da)))
-            gap = step - 2 * base
-            for k in range(1, 4):
-                da = base + gap * k / 4
-                teeth.append((r0 * math.cos(a + da), r0 * math.sin(a + da)))
-        teeth = teeth[2:] + teeth[:2]
-        node(f"roller_{side}", teeth, stroke="#C8C8C8")
-        static_circle(x, ROLL_Y, 5.5, "#8A8A8A", 0.9, BODY)
-        static_circle(x, ROLL_Y, 1.8, "#8A8A8A", 0.8, FIT)
-
-
-def toothed(cx, cy, r, n, col, fill=FIT):
-    """A small sprocket, still: a toothed rim round a dark disc."""
-    pts = []
-    for t in range(n):
-        a = 2 * math.pi * t / n
-        for da, rr in ((-0.5, r - 2), (-0.26, r), (0.26, r), (0.5, r - 2)):
-            pts.append((cx + rr * math.cos(a + da * 2 * math.pi / n), cy + rr * math.sin(a + da * 2 * math.pi / n)))
-    static(pts, col, 0.9, fill)
-
-
-def loop():
-    # the incoming film, edge on: down the screen's right edge, under the
-    # feed sprocket, hanging in a slack loop, up over a guide roller and into
-    # the sound head's channel. The loop's sides and foot are nodes (FLUTTER
-    # lowers it).
-    FILM = "#B4B4B4"
-    fx, gx = LOOP_R + 12, LOOP_L - 8
-    toothed(fx, LOOP_TOP, 9.5, 8, "#7A7A7A")
-    static_circle(fx, LOOP_TOP, 3, "#7A7A7A", 0.8, BODY)
-    static_circle(gx, LOOP_TOP, 6, "#7A7A7A", 0.9, FIT)
-    static_circle(gx, LOOP_TOP, 2.2, "#7A7A7A", 0.8, BODY)
-    static(line(fx + 12, 38.4, fx + 12, LOOP_TOP, 0.7), FILM, 0.8)
-    static(arc(fx, LOOP_TOP, 12, 0, 180, 12, 0.7), FILM, 0.8)
-    for side in ("l", "r"):
-        for k in range(6):
-            node(f"loop_{side}{k}", line(0, 0, 0, 26, 0.7), stroke=FILM)
-    node("loop_foot", arc(0, 0, LOOP_ARC, 0, 180, 18, 0.7), stroke=FILM)
-    static(arc(gx, LOOP_TOP, 8.6, 180, 360, 10, 0.7), FILM, 0.8)
-    static(line(gx - 8.6, LOOP_TOP, gx - 8.6, LOOP_TOP + 16, 0.7), FILM, 0.8)
-    # the channel's mouth the film runs into
-    static(rect(gx - 13, LOOP_TOP + 16, gx - 4, LOOP_TOP + 20, 1, 1), "#5A5A5A", 0.8, "#050505")
+def ends():
+    # The film runs on over both ends of the slat: past the near end it drops
+    # behind the slat, so a black mask over the dark there hides what is
+    # pulled past it; past the far end, a mask and then the slat's end face
+    # (black, with light seams) hide it as it goes over the edge, and the
+    # film's two edges run down the end face.
+    static(quad(-MASK_REACH, -0.3, -2, FILM_W + 2), BLACK, 0.0, BLACK)
+    static(quad(LENGTH + 0.3, LENGTH + MASK_REACH, -2, FILM_W + 2), BLACK, 0.0, BLACK)
+    y0, y1 = -MARGIN, FILM_W + MARGIN
+    static([iso(LENGTH, y0), iso(LENGTH, y1), iso(LENGTH, y1, 0), iso(LENGTH, y0, 0)], SEAM, 0.5, BLACK)
+    for y in (0.0, FILM_W):
+        static(segment(iso(LENGTH, y, SLAT_H - 0.3), iso(LENGTH, y, 1.0), 0.25), "#3A3A3A", 0.4)
 
 
 def slits():
-    # SLIT: the light's line across the track, 1.2 to 7 px wide (16 widths)
+    # SLIT: the light's line across the track, 0.8 to 6 px wide (16 widths)
     for k in range(16):
         w = 0.8 + (6.0 - 0.8) * (k / 15) ** 2.4
-        node(f"slit_{k}", [(-w / 2, SLIT_TOP - TRACK_C), (w / 2, SLIT_TOP - TRACK_C), (w / 2, SLIT_BOT - TRACK_C), (-w / 2, SLIT_BOT - TRACK_C)],
-             fill=LIGHT, stroke=LIGHT)
+        a, b = SLIT_Y0 - TRACK_C, SLIT_Y1 - TRACK_C
+        node(f"slit_{k}", [rel(-w / 2, a), rel(w / 2, a), rel(w / 2, b), rel(-w / 2, b)], fill=LIGHT, stroke=LIGHT, w=0.3)
+
+
+def gate():
+    # two posts beside the film, and the bar that bridges it on them; the
+    # bar's three faces share one pivot (its foot's middle) and move together
+    for py in POSTS_Y:
+        box(GATE - POST_HALF, GATE + POST_HALF, py - POST_HALF, py + POST_HALF, SLAT_H, SLAT_H + POST_TOP, G3, G3, SIDE, BLACK, 0.4)
+    yc = (BAR_Y0 + BAR_Y1) / 2
+    a, b, h, t = BAR_Y0 - yc, BAR_Y1 - yc, BAR_HALF_X, BAR_THICK
+    node("bar_left", [rel(-h, b, t), rel(h, b, t), rel(h, b, 0), rel(-h, b, 0)], fill=G3, stroke=BLACK, w=0.4)
+    node("bar_right", [rel(h, a, t), rel(h, b, t), rel(h, b, 0), rel(h, a, 0)], fill=SIDE, stroke=BLACK, w=0.4)
+    node("bar_top", [rel(-h, a, t), rel(h, a, t), rel(h, b, t), rel(-h, b, t)], fill=G3, stroke=BLACK, w=0.4)
 
 
 def build():
+    slat()
     film()
+    guides()
     moving()
-    castings()
-    flywheel()
-    loop()
-    rollers()
-    lamp()
+    ends()
     slits()
+    gate()
     n_header = 8
     names = list(NODES)
     first_header = PATHS
@@ -342,43 +291,60 @@ def build():
         kind = layer[0]
         if kind == "static":
             _, d, col, w, fill = layer
-            lines.append(f'<path d="{d}" fill="{fill}" stroke="{col}" stroke-width="{fmt(w)}"/>')
-            statics += 1
-        elif kind == "circle":
-            _, (cx, cy, r), col, w, fill = layer
-            lines.append(f'<circle cx="{fmt(cx)}" cy="{fmt(cy)}" r="{fmt(r)}" fill="{fill}" stroke="{col}" stroke-width="{fmt(w)}"/>')
+            stroke = f'stroke="{col}" stroke-width="{fmt(w)}"' if w > 0 else 'stroke="none"'
+            lines.append(f'<path d="{d}" fill="{fill}" {stroke}/>')
             statics += 1
         elif kind == "path":
             p = layer[1]
             pts = [(30 * math.cos(2 * math.pi * i / POINTS), 15 * math.sin(2 * math.pi * i / POINTS)) for i in range(POINTS)]
-            lines.append(f'<path id="{ID}_node_{p}" d="{poly(pts)}" fill="none" stroke="{INK}" stroke-width="1"/>')
+            lines.append(f'<path id="{ID}_node_{p}" transform="matrix(1 0 0 1 640 320)" d="{poly(pts)}" fill="none" '
+                         f'stroke="{G4}" stroke-width="0.75"/>')
         else:
             name = layer[1]
-            points, circle, fill, stroke = NODES[name]
+            points, circle, fill, stroke, w = NODES[name]
             idx = index[name]
             if circle:
                 cx, cy, r = circle
                 lines.append(f'<circle id="{ID}_node_{idx}" transform="matrix(1 0 0 1 640 320)" cx="{fmt(cx)}" cy="{fmt(cy)}" '
-                             f'r="{fmt(r)}" fill="{fill}" stroke="{stroke}" stroke-width="1"/>')
+                             f'r="{fmt(r)}" fill="{fill}" stroke="{stroke}" stroke-width="{fmt(w)}"/>')
             else:
                 lines.append(f'<path id="{ID}_node_{idx}" transform="matrix(1 0 0 1 640 320)" d="{poly(points)}" '
-                             f'fill="{fill}" stroke="{stroke}" stroke-width="1"/>')
+                             f'fill="{fill}" stroke="{stroke}" stroke-width="{fmt(w)}"/>')
     for i, (col, w) in enumerate(PALETTE):
         lines.append(f'<circle id="{ID}_palette_{i}" cx="640" cy="0" r="1" fill="{col}" stroke="{col}" stroke-width="{fmt(w)}"/>')
     lines.append("</g>")
     text = "\n".join(lines) + "\n"
+    assert len(text.encode()) <= 64 * 1024, "artwork over 64 KiB"
     (ROOT / "panel.svg.fragment").write_text(text)
+
     q10 = lambda v: int(round(v * 1024))
+    # the face-on drawing (x +-33, y +-24 px) laid along the track and projected
+    a = (DRAW_X1 - DRAW_X0) / (2 * FACE_HALF_X)
+    b = TRACK_HALF / FACE_HALF_Y
+    along_x, along_y = round(a * C30 * 1024), round(a * S30 * 1024)
+    across_x, across_y = round(b * C30 * 1024), round(b * S30 * 1024)
+    # spikes in the drawing (near-vertical turns face on) must open under the
+    # projection, never close: x's share across y's direction outweighs y's length
+    assert a * C30 > b
     head = ["#pragma once", "// Generated by tools/make_panel.py: the artwork's node numbers and the",
-            "// geometry display.cpp places them by (Q10 px).", "#include <opxy/types.hpp>", "",
+            "// geometry display.cpp places them by (Q10 px). Film coordinates run x along",
+            "// the film, y across it, on the slat's top; iso_x, iso_y put them on the screen.",
+            "#include <opxy/types.hpp>", "",
             "namespace flicker {", "namespace art {",
             f"const opxy::u32 header_node = {first_header};",
             f"const opxy::u32 node_count = {bound};",
-            f"const opxy::i32 pitch = {q10(PITCH)}, gate = {q10(GATE)}, window_left = {q10(WIN_L)}, window_right = {q10(WIN_R)};",
-            f"const opxy::i32 picture_y = {q10((PIC_Y0 + PIC_Y1) / 2)}, perf_y = {q10(ROLL_Y)}, track_y = {q10(TRACK_C)};",
-            f"const opxy::i32 track_half = {q10((TRACK_Y1 - TRACK_Y0) / 2)}, roller_y = {q10(ROLL_Y)}, roller_radius = {q10(ROLL_R)};",
-            f"const opxy::i32 loop_left = {q10(LOOP_L)}, loop_right = {q10(LOOP_R)}, loop_top = {q10(LOOP_TOP)}, loop_arc = {q10(LOOP_ARC)};",
-            f"const opxy::i32 flywheel_x = {q10(FLY_X)}, flywheel_y = {q10(FLY_Y)};",
+            f"const opxy::i32 iso_x = {q10(OX)}, iso_y = {q10(OY - SLAT_H)}, cos30 = {round(C30 * 1024)};",
+            f"const opxy::i32 pitch = {q10(PITCH)}, pitch_x = {q10(PITCH * C30)}, frames = {FRAMES};",
+            f"const opxy::i32 track_x = {q10((DRAW_X0 + DRAW_X1) / 2)}, track_y = {q10(TRACK_C)};",
+            f"const opxy::i32 picture_x = {q10((PIC[0] + PIC[1]) / 2)}, picture_y = {q10((PIC[2] + PIC[3]) / 2)};",
+            f"const opxy::i32 perf_x = {q10((PERF[0] + PERF[1]) / 2)}, perf_y = {q10((PERF[2] + PERF[3]) / 2)};",
+            f"const opxy::i32 speck_x[{len(SPECKS)}] = {{{', '.join(str(q10(s[0])) for s in SPECKS)}}}, "
+            f"speck_y[{len(SPECKS)}] = {{{', '.join(str(q10(s[1])) for s in SPECKS)}}};",
+            f"const opxy::i32 gate = {q10(GATE)}, bar_y = {q10((BAR_Y0 + BAR_Y1) / 2)}, bar_z = {q10(BAR_Z)}, lift = {q10(LIFT)};",
+            f"const opxy::i32 guide_length = {q10(GUIDE_LENGTH)};",
+            "// the face-on drawing (Q10 px, x along, y across) on the track: screen x =",
+            "// (x along_x - y across_x) / 1024, screen y = (x along_y + y across_y) / 1024",
+            f"const opxy::i32 along_x = {along_x}, along_y = {along_y}, across_x = {across_x}, across_y = {across_y};",
             "enum Node : opxy::u32 {"]
     head += [f"    {name} = {index[name]}," for name in names]
     head += ["};", "}", "}", ""]

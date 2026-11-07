@@ -1,0 +1,162 @@
+name: Kit CPU and sound
+# Three checks for work on the kits' CPU (tools/perf/):
+# - render-identity: every commit marked "Sound: identical" (a line in its
+#   message) renders its kit bit for bit as its parent, with g++ and clang++:
+#   the profiler's whole drum workload, every key of every preset, the kit's
+#   own sweep, and control and pad sweeps. If every commit since the base is
+#   so marked, the head must render as the base does too.
+# - compare: the base's and the head's hits as WAV files, with a report of
+#   each model's loudness, peak, decay, brightness and band energies. Reports
+#   only.
+# - blackfin-count: each kit compiled with the SDK's pinned Blackfin tools
+#   and its loops tabled, base against head. (tools/perf/sim.cpp would count
+#   the profiler's workload in GDB's Blackfin simulator, but that simulator
+#   hangs on this toolchain's code; tools/perf/probe.sh shows where.)
+# All against open-xy 810db9d8, the SDK trigon-capture-001 was built with.
+on:
+  push:
+    branches: ['ci/**', 'perf/**']
+  workflow_dispatch:
+    inputs:
+      base:
+        description: The ref to compare against
+        default: v1.0.0
+permissions:
+  contents: read
+concurrency:
+  group: perf-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  OPEN_XY_REPO: etcetc000/open-xy
+  OPEN_XY_SHA: 810db9d8dce1244a241a3281aa6490bff923908e
+  BASE: ${{ github.event.inputs.base || 'v1.0.0' }}
+jobs:
+  # The kits whose folders differ from the base, for blackfin-count (all
+  # three when none does, to count the base).
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      kits: ${{ steps.kits.outputs.kits }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: kits
+        run: |
+          git fetch --tags --force origin
+          kits=""
+          for kit in dust felt flicker; do
+            [ "$(git rev-parse "$BASE:$kit")" = "$(git rev-parse "HEAD:$kit")" ] || kits="$kits \"$kit\","
+          done
+          [ -n "$kits" ] || kits='"dust", "felt", "flicker",'
+          echo "kits=[${kits%,}]" | tee -a "$GITHUB_OUTPUT"
+
+  render-identity:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        kit: [dust, felt, flicker]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: trigon
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.OPEN_XY_REPO }}
+          ref: ${{ env.OPEN_XY_SHA }}
+          path: open-xy
+      - name: Compilers
+        run: sudo apt-get update && sudo apt-get install -y clang g++
+      - name: Bit for bit
+        working-directory: trigon
+        run: |
+          git fetch --tags --force origin
+          sh tools/perf/identity.sh ${{ matrix.kit }} ../open-xy "$BASE"
+
+  compare:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        kit: [dust, felt, flicker]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: trigon
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.OPEN_XY_REPO }}
+          ref: ${{ env.OPEN_XY_SHA }}
+          path: open-xy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y g++
+          python -m pip install numpy==2.3.5
+      - name: Sound, base against head
+        id: sound
+        working-directory: trigon
+        run: |
+          git fetch --tags --force origin
+          if [ "$(git rev-parse "$BASE:${{ matrix.kit }}")" = "$(git rev-parse "HEAD:${{ matrix.kit }}")" ]; then
+            echo "${{ matrix.kit }} is unchanged since $BASE" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "changed=0" >> "$GITHUB_OUTPUT"
+          else
+            sh tools/perf/compare.sh ${{ matrix.kit }} ../open-xy "$BASE" "$RUNNER_TEMP/sound"
+            echo "changed=1" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: steps.sound.outputs.changed == '1'
+        with:
+          name: sound-${{ matrix.kit }}
+          path: ${{ runner.temp }}/sound
+          retention-days: 14
+
+  blackfin-count:
+    needs: changes
+    runs-on: macos-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        kit: ${{ fromJSON(needs.changes.outputs.kits) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: trigon
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.OPEN_XY_REPO }}
+          ref: ${{ env.OPEN_XY_SHA }}
+          path: open-xy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore the pinned Blackfin tools
+        uses: actions/cache@v4
+        with:
+          path: open-xy/local/toolchain
+          key: toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('open-xy/profiles/toolchains.json') }}
+      - name: Pinned Blackfin tools
+        working-directory: open-xy
+        run: python sdk.py toolchain fetch
+      - name: Loops and counts, base against head
+        working-directory: trigon
+        run: |
+          git fetch --tags --force origin
+          sh tools/perf/count.sh ${{ matrix.kit }} ../open-xy "$BASE"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: counts-${{ matrix.kit }}
+          path: |
+            ${{ runner.temp }}/count-${{ matrix.kit }}/*.counts
+            ${{ runner.temp }}/count-${{ matrix.kit }}/*.lst
+            ${{ runner.temp }}/count-${{ matrix.kit }}/counts.json
+          retention-days: 30

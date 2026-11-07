@@ -1,7 +1,7 @@
 #pragma once
-// FLICKER's screen: a strip of 16 mm sound film running through a
-// projector's sound head (art.h, panel.svg.fragment), its soundtrack drawn
-// with the selected key's sound.
+// FLICKER's screen: a strip of 16 mm sound film lying on an isometric slat
+// under a small gate (art.h, panel.svg.fragment), its soundtrack drawn with
+// the selected key's sound.
 #include <opxy/draw.hpp>
 #include <opxy/page_header.hpp>
 #include "art.h"

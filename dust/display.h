@@ -1,7 +1,6 @@
 #pragma once
-// DUST's screen: a portable record player with a soul 45 on it (art.h,
-// panel.svg.fragment), drawn from the selected key's controls and played by
-// its hits.
+// DUST's screen: an isometric record deck (art.h, panel.svg.fragment), drawn
+// from the selected key's controls and played by its hits.
 #include <opxy/draw.hpp>
 #include <opxy/page_header.hpp>
 #include "art.h"

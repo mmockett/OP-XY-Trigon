@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
 env:
   # The kits' per-key mixer channels (padMix, SDK 1.10) are in the SDK's
   # staging branch since etcetc000/open-xy#399.

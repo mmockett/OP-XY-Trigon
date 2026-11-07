@@ -320,7 +320,7 @@ int main() {
                 if (churn > 25) { std::printf("%s: %.1f nodes change a frame while it moves\n", when, churn); ++failures; }
             }
     std::printf("churn: %.1f nodes a frame on average while a hit moves, %.1f at the worst setting, %u in the busiest frame\n", sum_churn / runs, worst_churn, peak);
-    if (peak > 32) { std::printf("the busiest frame changes %u nodes (at most 32)\n", peak); ++failures; }
+    if (peak > 30) { std::printf("the busiest frame changes %u nodes (at most 30)\n", peak); ++failures; }
 
     // the amp envelope moves nothing: a kit voice plays to its own end
     // whatever M2 says, so a hit moves as long with any envelope as with none;
