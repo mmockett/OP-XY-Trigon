@@ -29,7 +29,10 @@ const i32 lsr = L(44100.0);   // log2 of the sample rate
 // ------------------------------------------------------------ arithmetic
 inline i32 mul(i32 a, i32 b) { return opxy::q31::multiply(a, b); }
 inline i32 add(i32 a, i32 b) { return opxy::q31::add(a, b); }
-inline i32 clamp(i32 v, i32 lo, i32 hi) { return v < lo ? lo : v > hi ? hi : v; }
+inline i32 imin(i32 a, i32 b) { return a < b ? a : b; }
+inline i32 imax(i32 a, i32 b) { return a > b ? a : b; }
+// (lo <= hi; as MIN and MAX, never a branch)
+inline i32 clamp(i32 v, i32 lo, i32 hi) { return imax(imin(v, hi), lo); }
 inline i32 absolute(i32 v) { return v < 0 ? (v < -one ? one : -v) : v; }
 // a + (b - a) t for a Q16 unit t; |b - a| < 2^31.
 inline i32 mix(i32 a, i32 b, i32 t) { return a + mul(b - a, clamp(t, 0, 65535) * 32768); }
@@ -105,8 +108,10 @@ inline i32 sin_inc(u32 inc) {
 
 // ------------------------------------------------------------ noise
 // xorshift: shifts and exclusive-ors only. The state is never zero.
+// (a seed of 0 starts as 0x9e3779b9: the voice's seed is set so where it is
+// made, so the generator never meets 0 and needs no test)
 inline u32 lcg(u32& s) {
-    u32 x = s ? s : 0x9e3779b9u;
+    u32 x = s;
     x ^= x << 13;
     x ^= x >> 17;
     x ^= x << 5;
