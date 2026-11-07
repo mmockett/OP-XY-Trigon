@@ -182,7 +182,9 @@ int main() {
             if (apart(f[0], f[4]) < 3.0) fail("a control barely changes the sound end to end", m, static_cast<int>(s), 0);
         }
     }
-    if (weak > 8) fail("too many weak steps", 0, static_cast<int>(weak), 0);
+    // (a few more than at first: the parts now stop 72 dB down, so the tails
+    // where a control's last steps were heard alone are shorter)
+    if (weak > 12) fail("too many weak steps", 0, static_cast<int>(weak), 0);
     // Every model ends at its heaviest settings too.
     for (unsigned m = 0; m < dust::kit::models; ++m) {
         for (int v = 0; v <= 127; v += 127) {
