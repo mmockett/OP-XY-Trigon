@@ -53,12 +53,13 @@ inline bool pad_control_text(u32 field, i32 value, char* text) {
     return true;
 }
 
-// A note's sound has ended once its output has stayed under -96 dB for
-// 90 ms with nothing still to come (a stroke, an echo, a claw's tick). Its
+// A note's sound has ended once its output has stayed 72 dB under the
+// ceiling for 23 ms with nothing still to come (a stroke, an echo, a claw's
+// tick). Its
 // voice then writes silence without drawing, and finished tells the SDK it
 // may free the voice.
-const i32 quiet_under = 1 << 15;
-const u32 quiet_blocks = 62;
+const i32 quiet_under = 1 << 18;
+const u32 quiet_blocks = 16;
 inline bool finished(const Voice& voice, const Shared&) { return voice.done != 0; }
 
 // A control word (raw << 24) as a Q16 unit.
@@ -166,7 +167,7 @@ inline void setup_projector(Voice& v, const i32* c, u32 hash) {
     // DUST: specks that pop, grain that crackles and a hair, all the key's own
     const i32 dg = 65536 - c[7];
     v.dust = c[7] ? clamp(65536 - mul16(sq16(dg), dg), 0, 65535) * 32768 : 0;   // quick to come in, as FLUTTER
-    v.dseed = hash;
+    v.dseed = nonzero_seed(hash);
     v.pop_wait = 90 + static_cast<i32>(hash >> 22);                 // the first speck within 25 ms
     v.pop = 0;
     v.pop_k = decay(L(0.0004));
@@ -187,7 +188,7 @@ FLICKER_APART void begin(Voice& voice, Shared& shared, opxy::Parameters paramete
     voice.model = voice.next = model;
     voice.tune = tune;
     voice.slit = slit;
-    voice.seed = (++shared.notes) * 2654435761u + owner * 40503u;
+    voice.seed = nonzero_seed((++shared.notes) * 2654435761u + owner * 40503u);
     i32 c[8];
     for (u32 i = 0; i < 8; ++i) c[i] = unit7(parameters[i]);
     const u32 hash = key_hash(model, parameters);
@@ -249,9 +250,10 @@ FLICKER_APART void dust(Voice& v, i32* x) {
             wait = 441 + static_cast<i32>((r >> 12) & 0x3fffu) - multiply(static_cast<i32>((r >> 12) & 0x3fffu), v.dust >> 1);
         }
         const u32 r = rng(seed);
-        i32 y = pop;
-        if (static_cast<i32>(r >> 1) < chance) y += r & 2u ? crack : -crack;
-        x[i] += y;
+        // a crackle, up (bit 1 set) or down, when r's top 31 bits fall under its chance
+        const i32 on = -static_cast<i32>(static_cast<i32>(r >> 1) < chance);
+        const i32 down = static_cast<i32>((r >> 1) & 1u) - 1;   // 0 up, -1 down
+        x[i] += pop + (((crack ^ down) - down) & on);
         pop = multiply(pop, pk);
     }
     // the hair: a dark line across the track, a few milliseconds long
