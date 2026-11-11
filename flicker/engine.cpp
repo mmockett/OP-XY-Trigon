@@ -14,6 +14,52 @@ const char* model_name(u32 model) { return kit::model[model < kit::models ? mode
 const char* parameter_name(u32 model, u32 slot) { return slot < 8 ? kit::model[model < kit::models ? model : 0].labels[slot] : ""; }
 u32 parameter_count(u32) { return 8; }
 
+// The ranges the track menu's scramble draws each model's controls from
+// (the SDK's scramble_range), so whatever it rolls stays playable: the
+// low drawings' PITCH kept off the sub-rumble and off the top (a kick at
+// 36..69 Hz, a bass at 38..141 Hz), DECAY off its shortest and short of the
+// longest tails, BEND short of a four-octave zap and SHAPE short of the
+// tallest drawn square. INK from a light bleed (no duller than 3.7 kHz, 11
+// kHz on the hats, claps and shakers) to a drawing twice the track's height
+// (no hard cut); FLUTTER and DUST to two thirds of their depth (40). A dot
+// rings no lower than 500 Hz, a shaker's DENSITY is no sparser than 960
+// dots a second, a card's stripes no thinner than a 9% pulse: the ends
+// whose loudness the level trims (levels.h) can barely lift. Every other
+// control keeps its whole travel.
+const unsigned char scramble_low[kit::models][8] = {
+    {20, 16, 16, 0, 0, 12, 0, 0},     // SWEEP
+    {16, 16, 0, 0, 0, 12, 0, 0},      // SCRATCH
+    {20, 16, 0, 0, 0, 12, 0, 0},      // RING
+    {8, 8, 0, 0, 0, 18, 0, 0},        // STROKES
+    {24, 8, 8, 0, 0, 12, 0, 0},       // DOT
+    {8, 8, 0, 12, 0, 12, 0, 0},       // CARD
+    {0, 0, 0, 0, 0, 18, 0, 0},        // HATCH
+    {0, 0, 0, 0, 0, 18, 0, 0},        // ORNAMENT
+    {0, 8, 40, 0, 0, 18, 0, 0},       // STIPPLE
+    {16, 16, 0, 0, 0, 12, 0, 0},      // BOOP
+    {20, 16, 0, 0, 0, 12, 0, 0},      // WAVE
+    {0, 0, 0, 0, 0, 12, 0, 0},        // CLAW
+};
+const unsigned char scramble_high[kit::models][8] = {
+    {88, 110, 112, 96, 127, 48, 40, 40},       // SWEEP
+    {112, 112, 127, 127, 127, 48, 40, 40},     // SCRATCH
+    {110, 112, 127, 96, 127, 48, 40, 40},      // RING
+    {120, 112, 127, 127, 127, 48, 40, 40},     // STROKES
+    {127, 127, 112, 127, 127, 48, 40, 40},     // DOT
+    {120, 112, 127, 127, 127, 48, 40, 40},     // CARD
+    {127, 112, 127, 127, 127, 48, 40, 40},     // HATCH
+    {127, 110, 127, 127, 127, 48, 40, 40},     // ORNAMENT
+    {127, 112, 127, 96, 127, 48, 40, 40},      // STIPPLE
+    {112, 110, 127, 96, 127, 48, 40, 40},      // BOOP
+    {100, 110, 127, 127, 127, 48, 40, 40},     // WAVE
+    {127, 110, 127, 127, 127, 48, 40, 40},     // CLAW
+};
+void scramble_range(u32 model, u32 slot, opxy::u8* low, opxy::u8* high) {
+    if (model >= kit::models || slot >= 8) return;
+    *low = scramble_low[model][slot];
+    *high = scramble_high[model][slot];
+}
+
 inline void initialize(Voice& voice, Shared&, u32 owner) {
     voice.owner = owner;
     voice.model = voice.next = 0;
