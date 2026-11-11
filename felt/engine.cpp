@@ -19,9 +19,9 @@ u32 parameter_count(u32) { return 8; }
 // DECAY off its shortest, PEDAL's halo and AGE's wear to half their travel,
 // a bolt's or bell's LOOSE and a pluck's BUZZ short of a constant rattle,
 // and the few ends the level trims (levels.h) work hardest to lift (a soft
-// HAMMER or a bare PAPER on the snare, a thin chain, a bow's near-silent
-// SPOT, a pluck fully muted) left out. BOW draws for at most 2 s and BENDs
-// at most half an octave. Every other control keeps its whole travel.
+// HAMMER or a bare PAPER on the snare, a chain too short, sparse or dry
+// to sound, a bow's near-silent SPOT, a pluck fully muted) left out. BOW
+// draws for at most 2 s and BENDs at most half an octave. Every other control keeps its whole travel.
 const unsigned char scramble_low[kit::models][8] = {
     {20, 16, 0, 0, 0, 0, 0, 0},       // THUD
     {28, 16, 16, 16, 0, 0, 0, 0},     // RATTLE
@@ -31,7 +31,7 @@ const unsigned char scramble_low[kit::models][8] = {
     {16, 16, 16, 0, 0, 0, 0, 0},      // BELL
     {16, 8, 0, 0, 0, 0, 0, 0},        // BRUSH
     {8, 0, 0, 16, 0, 0, 0, 0},        // PLANK
-    {16, 8, 16, 8, 0, 0, 0, 0},       // CHAIN
+    {16, 24, 40, 24, 0, 0, 0, 0},     // CHAIN
     {8, 16, 0, 0, 0, 0, 0, 0},        // BOLT
     {8, 8, 0, 0, 0, 0, 0, 0},         // PLUCK
     {16, 0, 8, 16, 32, 16, 0, 0},     // BOW
