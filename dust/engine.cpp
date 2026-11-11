@@ -13,6 +13,22 @@ const char* model_name(u32 model) { return kit::model[model < kit::models ? mode
 const char* parameter_name(u32 model, u32 slot) { return slot < 8 ? kit::model[model < kit::models ? model : 0].labels[slot] : ""; }
 u32 parameter_count(u32) { return 8; }
 
+// The ranges the track menu's scramble draws the record player's controls
+// from (the SDK's scramble_range), the same on every hit, so whatever it
+// rolls stays playable: SPEED within 4 semitones under 45 rpm and 7 over
+// (not the slowest 33 nor the fastest 78), LIFT off its shortest (a kick at
+// least 0.1 s, a hat 40 ms), WEIGHT 1.3 to 3 g (the stylus neither breaks up
+// nor smothers the top), CUE at most 9 ms early or 38% of the way late (the
+// hit stays on the beat and keeps its attack), WEAR to under half, WARP to
+// 52 cents of wow and DRAG to a 3-semitone sag. PICK keeps every bar.
+const unsigned char scramble_low[8] = {16, 0, 32, 52, 40, 0, 0, 0};
+const unsigned char scramble_high[8] = {112, 127, 127, 100, 88, 56, 32, 24};
+void scramble_range(u32 model, u32 slot, opxy::u8* low, opxy::u8* high) {
+    if (model >= kit::models || slot >= 8) return;
+    *low = scramble_low[slot];
+    *high = scramble_high[slot];
+}
+
 inline void initialize(Voice& voice, Shared&, u32 owner) {
     voice.owner = owner;
     voice.model = voice.next = 0;

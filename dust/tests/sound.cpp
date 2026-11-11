@@ -2,7 +2,8 @@
 // sounds, stays under the SDK's half-scale ceiling and ends; every model with
 // each control at five settings stays bounded and ends; each control moves
 // the sound across its whole travel; the pad controls (TUNE, TONE) do what
-// they say and change nothing at 0; the kit's names fit.
+// they say and change nothing at 0; what the track menu's scramble rolls
+// stays playable; the kit's names fit.
 // The full measurement of each control (spectrum and envelope, step by step)
 // is tools/sweep.py; this is its guard.
 #include "../engine.cpp"
@@ -195,6 +196,32 @@ int main() {
             play(m, c, nullptr, nullptr, peak, ended, 44100 * 15);
             if (peak > 0.5) fail("passes the ceiling with every control at an end", m, v, 0);
             if (!ended) fail("never ends with every control at an end", m, v, 0);
+        }
+    }
+    // The track menu's scramble: every model with its controls at the low
+    // ends of their scramble ranges, at the high ends, and drawn at random
+    // from them as the SDK draws them, sounds, stays under the ceiling and
+    // ends within 14 s.
+    unsigned seed = 0x2545f491u;
+    for (unsigned m = 0; m < dust::kit::models; ++m) {
+        for (int roll = 0; roll < 26; ++roll) {
+            int c[8];
+            for (unsigned s = 0; s < 8; ++s) {
+                opxy::u8 low = 0, high = 127;
+                dust::scramble_range(m, s, &low, &high);
+                if (low > high || high > 127) fail("a scramble range out of order", m, static_cast<int>(s), 0);
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                const unsigned span = high - low + 1u;
+                c[s] = roll == 0 ? low : roll == 1 ? high : low + static_cast<int>(((seed >> 16) * span) >> 16);
+            }
+            double peak;
+            bool ended;
+            play(m, c, nullptr, nullptr, peak, ended, 44100 * 14);
+            if (peak > 0.5) fail("a scramble passes the ceiling", m, roll, static_cast<int>(peak * 1000));
+            if (peak < 0.01) fail("a scramble too quiet", m, roll, static_cast<int>(peak * 1000));
+            if (!ended) fail("a scramble never ends", m, roll, 0);
         }
     }
     std::printf("%u weak steps of %u\n", weak, dust::kit::models * 8 * 4);

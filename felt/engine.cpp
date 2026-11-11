@@ -13,6 +13,49 @@ const char* model_name(u32 model) { return kit::model[model < kit::models ? mode
 const char* parameter_name(u32 model, u32 slot) { return slot < 8 ? kit::model[model < kit::models ? model : 0].labels[slot] : ""; }
 u32 parameter_count(u32) { return 8; }
 
+// The ranges the track menu's scramble draws each model's controls from
+// (the SDK's scramble_range), so whatever it rolls stays playable: TUNE
+// within about an octave around the model's default (no kick under 39 Hz),
+// DECAY off its shortest, PEDAL's halo and AGE's wear to half their travel,
+// a bolt's or bell's LOOSE and a pluck's BUZZ short of a constant rattle,
+// and the few ends the level trims (levels.h) work hardest to lift (a soft
+// HAMMER or a bare PAPER on the snare, a chain too short, sparse or dry
+// to sound, a bow's near-silent SPOT, a pluck fully muted) left out. BOW
+// draws for at most 2 s and BENDs at most half an octave. Every other control keeps its whole travel.
+const unsigned char scramble_low[kit::models][8] = {
+    {20, 16, 0, 0, 0, 0, 0, 0},       // THUD
+    {28, 16, 16, 16, 0, 0, 0, 0},     // RATTLE
+    {16, 16, 0, 0, 0, 0, 0, 0},       // TOM
+    {16, 0, 0, 0, 0, 0, 0, 0},        // LID
+    {16, 16, 16, 0, 0, 0, 0, 0},      // TACK
+    {16, 16, 16, 0, 0, 0, 0, 0},      // BELL
+    {16, 8, 0, 0, 0, 0, 0, 0},        // BRUSH
+    {8, 0, 0, 16, 0, 0, 0, 0},        // PLANK
+    {16, 24, 40, 24, 0, 0, 0, 0},     // CHAIN
+    {8, 16, 0, 0, 0, 0, 0, 0},        // BOLT
+    {8, 8, 0, 0, 0, 0, 0, 0},         // PLUCK
+    {16, 0, 8, 16, 32, 16, 0, 0},     // BOW
+};
+const unsigned char scramble_high[kit::models][8] = {
+    {88, 127, 127, 127, 127, 127, 64, 64},     // THUD: 39..75 Hz
+    {96, 127, 127, 127, 127, 127, 64, 64},     // RATTLE: 162..275 Hz
+    {112, 127, 127, 127, 127, 127, 64, 64},    // TOM: 82..337 Hz
+    {112, 127, 127, 127, 127, 127, 64, 64},    // LID
+    {120, 127, 127, 127, 127, 127, 64, 64},    // TACK
+    {112, 127, 127, 127, 127, 72, 64, 64},     // BELL
+    {112, 127, 127, 127, 112, 127, 64, 64},    // BRUSH
+    {112, 127, 127, 127, 127, 127, 64, 64},    // PLANK
+    {112, 127, 127, 127, 127, 127, 64, 64},    // CHAIN
+    {96, 127, 127, 127, 127, 72, 64, 64},      // BOLT: 63..292 Hz
+    {112, 127, 127, 127, 100, 72, 64, 64},     // PLUCK: 47..258 Hz
+    {112, 127, 127, 100, 96, 127, 64, 64},     // BOW
+};
+void scramble_range(u32 model, u32 slot, opxy::u8* low, opxy::u8* high) {
+    if (model >= kit::models || slot >= 8) return;
+    *low = scramble_low[model][slot];
+    *high = scramble_high[model][slot];
+}
+
 inline void initialize(Voice& voice, Shared&, u32 owner) {
     voice.owner = owner;
     voice.model = voice.next = 0;
