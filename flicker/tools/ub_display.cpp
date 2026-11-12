@@ -49,7 +49,7 @@ int main() {
                 for (int i = 0; i < 4; ++i) { input.shown[i] = static_cast<opxy::u8>(4 + i); input.parameters[i] = input.slots[4 + i]; }
                 input.line = 1;
             }
-            if (f >= 110) { input.shift = 1; input.pan = -35; input.level = -7; input.pad[2] = 3; input.pad[3] = 7; }
+            if (f >= 110) { input.shift = 1; input.pan = -35; input.level = -7; input.pad[2] = 34; input.pad[3] = 101; }
             flicker::display(state, input, frame);
             ok = ok && valid(frame);
             h = hash(h, &frame, sizeof frame);

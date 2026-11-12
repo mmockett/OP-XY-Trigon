@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sdk": "1.10",
+  "sdk": "1.15",
   "kind": "drum",
   "description": "A soul 45 on a portable record player as a drum kit: every key a hit from the break, played by the player's speed, needle, arm and dust brush.",
   "sources": [
