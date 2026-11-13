@@ -33,6 +33,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Kit presets, their sends as every firmware reads them (pure Python)
+        run: |
+          for kit in $KITS; do
+            python "trigon/$kit/tools/presets.py" --check || exit 1
+          done
       - name: Preview and host tools
         run: |
           sudo apt-get update && sudo apt-get install -y clang lld
